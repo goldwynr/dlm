@@ -119,6 +119,7 @@ struct summary {
 	unsigned int lkb_local_copy;
 	unsigned int lkb_process_copy;
 	unsigned int expect_replies;
+	unsigned int toss_total;
 };
 
 static const char *mode_str(int mode)
@@ -735,6 +736,63 @@ static void print_lkb(char *line, struct rinfo *ri)
 		printf("%s\n", pr_verbose(&lkb));
 }
 
+static void print_rsb_toss(char *line)
+{
+	char type[4], namefmt[4], *p;
+	char addr[64];
+	char toss_time[16];
+	int res_nodeid, master_nodeid, dir_nodeid, our_nodeid;
+	int rv, namelen;
+	uint32_t flags;
+
+	rv = sscanf(line, "%s %s %d %d %d %d %s %u %u %s",
+		    type,
+		    addr,
+		    &res_nodeid,
+		    &master_nodeid,
+		    &dir_nodeid,
+		    &our_nodeid,
+		    toss_time,
+		    &flags,
+		    &namelen,
+		    namefmt);
+
+	if (rv != 10)
+		goto fail;
+
+	p = strchr(line, '\n');
+	if (!p)
+		goto fail;
+	*p = '\0';
+
+	p = strstr(line, namefmt);
+	if (!p)
+		goto fail;
+	p += 4;
+
+	strcat(addr, " ");
+
+	if (!strncmp(namefmt, "str", 3))
+		printf("Resource len %2d  \"%s\"\n", namelen, p);
+	else if (!strncmp(namefmt, "hex", 3))
+		printf("Resource len %2d hex %s\n", namelen, p);
+	else
+		goto fail;
+
+	printf("Dir %d master %d our %d ",
+		dir_nodeid, master_nodeid, our_nodeid);
+
+	if (master_nodeid == our_nodeid && res_nodeid != 0)
+		printf("res %d", res_nodeid);
+
+	printf("\n");
+
+	return;
+
+ fail:
+	fprintf(stderr, "print_rsb error rv %d line \"%s\"\n", rv, line);
+}
+
 static void clear_rinfo(struct rinfo *ri)
 {
 	memset(ri, 0, sizeof(struct rinfo));
@@ -780,13 +838,14 @@ static void count_rinfo(struct summary *s, struct rinfo *ri)
 static void print_summary(struct summary *s)
 {
 	printf("rsb\n");
-	printf("  total         %u\n", s->rsb_total);
+	printf("  active        %u\n", s->rsb_total);
 	printf("  master        %u\n", s->rsb_master);
 	printf("  remote master %u\n", s->rsb_local);
 	printf("  lookup master %u\n", s->rsb_lookup);
 	printf("  with lvb      %u\n", s->rsb_with_lvb);
 	printf("  with no locks %u\n", s->rsb_no_locks);
 	printf("  nodeid error  %u\n", s->rsb_nodeid_error);
+	printf("  inactive      %u\n", s->toss_total);
 	printf("\n");
 
 	printf("lkb\n");
@@ -860,6 +919,31 @@ static void do_waiters(char *name, struct summary *sum)
 	fclose(file);
 }
 
+static void do_toss(char *name, struct summary *sum)
+{
+	FILE *file;
+	char path[PATH_MAX];
+	char line[LOCK_LINE_MAX];
+
+	snprintf(path, PATH_MAX, "/sys/kernel/debug/dlm/%s_toss", name);
+
+	file = fopen(path, "r");
+	if (!file)
+		return;
+
+	while (fgets(line, LOCK_LINE_MAX, file)) {
+		if (!strncmp(line, "version", 7))
+			continue;
+
+		if (!strncmp(line, "rsb", 3)) {
+			print_rsb_toss(line);
+			sum->toss_total++;
+			printf("\n");
+		}
+	}
+	fclose(file);
+}
+
 static void do_lockdebug(char *name)
 {
 	struct summary summary;
@@ -914,7 +998,12 @@ static void do_lockdebug(char *name)
  raw:
 		printf("%s", line);
 	}
+	count_rinfo(&summary, &info);
+	clear_rinfo(&info);
+	printf("\n");
 	fclose(file);
+
+	do_toss(name, &summary);
 
 	do_waiters(name, &summary);
 
