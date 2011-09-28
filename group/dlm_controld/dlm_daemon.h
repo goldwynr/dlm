@@ -81,6 +81,7 @@ extern int plock_fd;
 extern int plock_ci;
 extern struct list_head lockspaces;
 extern int cluster_quorate;
+extern uint32_t cluster_ringid_seq;
 extern int our_nodeid;
 extern uint32_t control_minor;
 extern uint32_t monitor_minor;

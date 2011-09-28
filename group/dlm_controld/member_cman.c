@@ -42,7 +42,12 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	cs_error_t err;
 	int i, j, num_addrs;
 
+
 	cluster_quorate = quorate;
+	cluster_ringid_seq = (uint32_t)ring_seq;
+
+	log_debug("cluster quorum %u seq %u nodes %u",
+		  cluster_quorate, cluster_ringid_seq, node_list_entries);
 
 	old_node_count = quorum_node_count;
 	memcpy(&old_nodes, &quorum_nodes, sizeof(old_nodes));
@@ -55,7 +60,8 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 
 	for (i = 0; i < old_node_count; i++) {
 		if (!is_cluster_member(old_nodes[i])) {
-			log_debug("cluster node %u removed", old_nodes[i]);
+			log_debug("cluster node %u removed seq %u",
+				  old_nodes[i], cluster_ringid_seq);
 			node_history_cluster_remove(old_nodes[i]);
 			del_configfs_node(old_nodes[i]);
 		}
@@ -63,7 +69,8 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 
 	for (i = 0; i < quorum_node_count; i++) {
 		if (!is_old_member(quorum_nodes[i])) {
-			log_debug("cluster node %u added", quorum_nodes[i]);
+			log_debug("cluster node %u added seq %u",
+				  quorum_nodes[i], cluster_ringid_seq);
 			node_history_cluster_add(quorum_nodes[i]);
 
 			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
@@ -127,7 +134,7 @@ int setup_cluster(void)
 		goto fail;
 	}
 
-	err = quorum_trackstart(qh, CS_TRACK_CURRENT);
+	err = quorum_trackstart(qh, CS_TRACK_CHANGES);
 	if (err != CS_OK) {
 		log_error("quorum trackstart error %d", err);
 		goto fail;

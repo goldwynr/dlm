@@ -1246,6 +1246,7 @@ int plock_ci;
 struct list_head lockspaces;
 int cluster_quorate;
 int our_nodeid;
+uint32_t cluster_ringid_seq;
 uint32_t control_minor;
 uint32_t monitor_minor;
 uint32_t plock_minor;
