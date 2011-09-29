@@ -1,5 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
 #include <corosync/corotypes.h>
 #include <corosync/cfg.h>
 #include <corosync/quorum.h>

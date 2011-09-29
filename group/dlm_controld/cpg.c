@@ -1,5 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
 
 struct protocol_version {
 	uint16_t major;

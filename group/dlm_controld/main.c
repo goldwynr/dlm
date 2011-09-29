@@ -1,16 +1,10 @@
 #include "dlm_daemon.h"
-#include "config.h"
 #include <pthread.h>
-#include "copyright.cf"
-
-#include <linux/dlmconstants.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
 #include <linux/dlm_netlink.h>
 
-#define LOCKFILE_NAME	CLUSTERVARRUN "/dlm_controld.pid"
 #define CLIENT_NALLOC	32
-
 static int client_maxi;
 static int client_size = 0;
 static struct client *client = NULL;
@@ -872,9 +866,7 @@ static void loop(void)
 		goto out;
 	client_add(rv, process_cluster, cluster_dead);
 
-	rv = setup_ccs();
-	if (rv < 0)
-		goto out;
+	setup_config(0);
 
 	setup_logging();
 
@@ -987,7 +979,6 @@ static void loop(void)
 	close_cpg_daemon();
 	clear_configfs();
 	close_logging();
-	close_ccs();
 	close_cluster();
 	close_cluster_cfg();
 
@@ -1114,11 +1105,6 @@ static void read_arguments(int argc, char **argv)
 		case 'q':
 			optd_enable_quorum = 1;
 			cfgd_enable_quorum = atoi(optarg);
-			break;
-
-		case 'd':
-			optd_enable_deadlk = 1;
-			cfgd_enable_deadlk = atoi(optarg);
 			break;
 
 		case 'p':
@@ -1261,7 +1247,6 @@ int optk_protocol;
 int optd_debug_logfile;
 int optd_enable_fencing;
 int optd_enable_quorum;
-int optd_enable_deadlk;
 int optd_enable_plock;
 int optd_plock_debug;
 int optd_plock_rate_limit;
@@ -1279,7 +1264,6 @@ int cfgk_protocol               = PROTO_DETECT;
 int cfgd_debug_logfile		= DEFAULT_DEBUG_LOGFILE;
 int cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
 int cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;
-int cfgd_enable_deadlk          = DEFAULT_ENABLE_DEADLK;
 int cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
 int cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
 int cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;

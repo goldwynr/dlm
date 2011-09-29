@@ -1,6 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
-
 #include <linux/dlm_plock.h>
 
 /* FIXME: remove this once everyone is using the version of

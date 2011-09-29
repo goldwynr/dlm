@@ -1,5 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
 
 #include <corosync/corotypes.h>
 #include <corosync/confdb.h>
@@ -317,7 +316,7 @@ static int create_path(const char *path)
 	return rv;
 }
 
-static int path_exists(const char *path)
+int path_exists(const char *path)
 {
 	struct stat buf;
 

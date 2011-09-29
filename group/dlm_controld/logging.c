@@ -1,15 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
-#include "ccs.h"
-
-extern int ccs_handle;
-
-#define DAEMON_NAME "dlm_controld"
-#define DEFAULT_LOG_MODE LOG_MODE_OUTPUT_FILE|LOG_MODE_OUTPUT_SYSLOG
-#define DEFAULT_SYSLOG_FACILITY		SYSLOGFACILITY
-#define DEFAULT_SYSLOG_PRIORITY		SYSLOGLEVEL
-#define DEFAULT_LOGFILE_PRIORITY	LOG_INFO /* ? */
-#define DEFAULT_LOGFILE			LOGDIR "/" DAEMON_NAME ".log"
 
 static int log_mode;
 static int syslog_facility;
@@ -41,10 +30,13 @@ void init_logging(void)
 
 void setup_logging(void)
 {
+	/* TODO */
+	/*
 	ccs_read_logging(ccs_handle, DAEMON_NAME,
 			 &cfgd_debug_logfile, &log_mode,
 			 &syslog_facility, &syslog_priority,
 			 &logfile_priority, logfile);
+	*/
 
 	log_debug("logging mode %d syslog f %d p %d logfile p %d %s",
 		  log_mode, syslog_facility, syslog_priority,

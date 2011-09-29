@@ -1,8 +1,6 @@
 #ifndef __DLM_DAEMON_DOT_H__
 #define __DLM_DAEMON_DOT_H__
 
-#include "clusterautoconfig.h"
-
 #include <sys/types.h>
 #include <asm/types.h>
 #include <sys/uio.h>
@@ -40,9 +38,28 @@
 #include <linux/dlmconstants.h>
 #include "libdlmcontrol.h"
 #include "dlm_controld.h"
+#include "config.h"
 #include "list.h"
-#include "linux_endian.h"
 #include "rbtree.h"
+#include "linux_endian.h"
+
+/* TODO: cleanup */
+#define CLUSTERVARLIB "/var/lib/cluster"
+#define CLUSTERVARRUN "/var/run/cluster"
+#define LOGDIR "/var/log/cluster"
+#define VERSION "master"
+#define SYSLOGFACILITY LOG_LOCAL4
+#define SYSLOGLEVEL LOG_INFO
+#define REDHAT_COPYRIGHT "Copyright (C) Red Hat, Inc.  2004-2011  All rights reserved."
+#define LOCKFILE_NAME CLUSTERVARRUN "/dlm_controld.pid"
+#define DAEMON_NAME "dlm_controld"
+#define DEFAULT_LOG_MODE LOG_MODE_OUTPUT_FILE|LOG_MODE_OUTPUT_SYSLOG
+#define DEFAULT_SYSLOG_FACILITY SYSLOGFACILITY
+#define DEFAULT_SYSLOG_PRIORITY SYSLOGLEVEL
+#define DEFAULT_LOGFILE_PRIORITY LOG_INFO /* ? */
+#define DEFAULT_LOGFILE LOGDIR "/" DAEMON_NAME ".log"
+#define DLM_CONFIG_FILE "/etc/dlm.conf"
+
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -204,13 +221,10 @@ void clear_configfs(void);
 int setup_configfs(void);
 int check_uncontrolled_lockspaces(void);
 int setup_misc_devices(void);
+int path_exists(const char *path);
 
 /* config.c */
-int setup_ccs(void);
-void close_ccs(void);
-void read_ccs_name(const char *path, char *name);
-void read_ccs_yesno(const char *path, int *yes, int *no);
-int read_ccs_int(const char *path, int *config_val);
+void setup_config(int update);
 int get_weight(int nodeid, char *lockspace);
 
 /* cpg.c */
