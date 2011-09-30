@@ -1,5 +1,3 @@
-#include "clusterautoconfig.h"
-
 #ifdef _REENTRANT
 #include <pthread.h>
 #endif
@@ -403,7 +401,7 @@ static int open_control_device(void)
 
 static int find_udev_device(const char *lockspace, int minor, char *udev_path)
 {
-	char basename[PATH_MAX];
+	char bname[PATH_MAX];
 	char tmp_path[PATH_MAX];
 	DIR *d;
 	struct dirent *de;
@@ -412,8 +410,8 @@ static int find_udev_device(const char *lockspace, int minor, char *udev_path)
 	int i;
 
 	ls_dev_name(lockspace, udev_path, PATH_MAX);
-	snprintf(basename, PATH_MAX, DLM_PREFIX "%s", lockspace);
-	basename_len = strlen(basename);
+	snprintf(bname, PATH_MAX, DLM_PREFIX "%s", lockspace);
+	basename_len = strlen(bname);
 
 	for (i = 0; i < 10; i++) {
 
@@ -435,7 +433,7 @@ static int find_udev_device(const char *lockspace, int minor, char *udev_path)
 				continue;
 			if (strlen(de->d_name) < MAX_SYSFS_NAME)
 				continue;
-			if (strncmp(de->d_name, basename, MAX_SYSFS_NAME))
+			if (strncmp(de->d_name, bname, MAX_SYSFS_NAME))
 				continue;
 			snprintf(tmp_path, PATH_MAX, MISC_PREFIX "%s",
 				 de->d_name);
