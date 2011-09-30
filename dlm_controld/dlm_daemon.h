@@ -41,7 +41,7 @@
 #include "config.h"
 #include "list.h"
 #include "rbtree.h"
-#include "linux_endian.h"
+#include "endian.h"
 
 /* TODO: cleanup */
 #define CLUSTERVARLIB "/var/lib/cluster"

@@ -34,7 +34,7 @@ CFLAGS += -D_GNU_SOURCE -g \
 
 CFLAGS += -fPIE -DPIE
 CFLAGS += `xml2-config --cflags`
-CFLAGS += -I../include -I../../dlm/libdlm -I../../dlm/libdlmcontrol
+CFLAGS += -I../dlm/libdlm -I../dlm/libdlmcontrol
 
 LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
 LDFLAGS += `xml2-config --libs`
