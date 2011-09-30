@@ -25,7 +25,7 @@ BIN_CFLAGS += -D_GNU_SOURCE -g \
 	-fdiagnostics-show-option \
 
 BIN_CFLAGS += -fPIE -DPIE
-BIN_CFLAGS += -I../include -I../dlm/libdlm -I../dlm_controld
+BIN_CFLAGS += -I../include -I../libdlm -I../dlm_controld
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
 BIN_LDFLAGS += -lpthread -ldlm -ldlmcontrol
