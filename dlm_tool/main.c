@@ -1,17 +1,15 @@
-#include "clusterautoconfig.h"
-
-#include <sys/types.h>
-#include <sys/un.h>
-#include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <inttypes.h>
 #include <netinet/in.h>
 
 #include <linux/dlmconstants.h>
@@ -45,6 +43,8 @@ static mode_t create_mode = 0600;
 static int verbose;
 static int wide;
 static int summarize;
+
+#define VERSION "master"
 
 #define MAX_LS 128
 #define MAX_NODES 128
@@ -657,13 +657,13 @@ static void print_lkb(char *line, struct rinfo *ri)
 	char type[4];
 	int rv;
 
-	rv = sscanf(line, "%s %x %d %x %u %"PRIu64" %x %x %d %d %d %d %d %d %u %"PRIu64" %"PRIu64,
+	rv = sscanf(line, "%s %x %d %x %u %llu %x %x %d %d %d %d %d %d %u %llu %llu",
 		    type,
 		    &lkb.id,
 		    &lkb.nodeid,
 		    &lkb.remid,
 		    &lkb.ownpid,
-		    &lkb.xid,
+		    (unsigned long long *)&lkb.xid,
 		    &lkb.exflags,
 		    &lkb.flags,
 		    &lkb.status,
@@ -673,8 +673,8 @@ static void print_lkb(char *line, struct rinfo *ri)
 		    &lkb.rsb_lookup,
 		    &lkb.wait_type,
 		    &lkb.lvbseq,
-		    &lkb.timestamp,
-		    &lkb.time_bast);
+		    (unsigned long long *)&lkb.timestamp,
+		    (unsigned long long *)&lkb.time_bast);
 
 	ri->lkb_count++;
 
@@ -936,7 +936,7 @@ static void do_lockdump(char *name)
 	int r_nodeid;
 	int r_len;
 	int rv;
-	unsigned int time;
+	unsigned int tm;
 	unsigned long long xid;
 	uint32_t	id;
 	int		nodeid;
@@ -972,7 +972,7 @@ static void do_lockdump(char *name)
 		       &status,
 		       &grmode,
 		       &rqmode,
-		       &time,
+		       &tm,
 		       &r_nodeid,
 		       &r_len);
 
