@@ -1,6 +1,7 @@
-TARGET = dlm_controld
+BIN_TARGET = dlm_controld
+MAN_TARGET = dlm_controld.8
 
-SOURCE = \
+BIN_SOURCE = \
 	action.c \
 	cpg.c \
 	crc.c \
@@ -11,7 +12,7 @@ SOURCE = \
 	logging.c \
 	rbtree.c
 
-CFLAGS += -D_GNU_SOURCE -g \
+BIN_CFLAGS += -D_GNU_SOURCE -g \
 	-Wall \
 	-Wformat \
 	-Wformat-security \
@@ -32,19 +33,33 @@ CFLAGS += -D_GNU_SOURCE -g \
 	-fasynchronous-unwind-tables \
 	-fdiagnostics-show-option \
 
-CFLAGS += -fPIE -DPIE
-CFLAGS += `xml2-config --cflags`
-CFLAGS += -I../dlm/libdlm -I../dlm/libdlmcontrol
+BIN_CFLAGS += -fPIE -DPIE
+BIN_CFLAGS += `xml2-config --cflags`
+BIN_CFLAGS += -I../dlm/libdlm -I../dlm/libdlmcontrol
 
-LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
-LDFLAGS += `xml2-config --libs`
-LDFLAGS += -lpthread -llogthread -lcpg -lconfdb -lcfg -lquorum -lfenced
+BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
+BIN_LDFLAGS += `xml2-config --libs`
+BIN_LDFLAGS += -lpthread -llogthread -lcpg -lconfdb -lcfg -lquorum -lfenced
 
-all: $(TARGET)
+all: $(BIN_TARGET)
 
-$(TARGET): $(SOURCE)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(SOURCE) -o $@ -L.
+$(BIN_TARGET): $(BIN_SOURCE)
+	$(CC) $(BIN_CFLAGS) $(BIN_LDFLAGS) $(BIN_SOURCE) -o $@ -L.
 
 clean:
-	rm -f *.o *.so *.so.* $(TARGET)
+	rm -f *.o *.so *.so.* $(BIN_TARGET)
+
+
+INSTALL=$(shell which install)
+
+DESTDIR=
+BINDIR=/usr/sbin
+MANDIR=/usr/share/man
+
+.PHONY: install
+install: all
+	$(INSTALL) -d $(DESTDIR)/$(BINDIR)
+	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man8
+	$(INSTALL) -c -m 755 $(BIN_TARGET) $(DESTDIR)/$(BINDIR)
+	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man8/
 
