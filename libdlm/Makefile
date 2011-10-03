@@ -1,10 +1,11 @@
 DESTDIR=
 PREFIX=/usr
-LIBDIR=/usr/lib64
-HDRDIR=/usr/include 
-MANDIR=/usr/share/man
-PKGDIR=/usr/lib64/pkgconfig
-UDEVDIR=/etc/udev/rules.d
+LIBNUM=/lib64
+LIBDIR=$(PREFIX)/$(LIBNUM)
+HDRDIR=$(PREFIX)/include 
+MANDIR=$(PREFIX)/share/man
+PKGDIR=$(PREFIX)/$(LIBNUM)/pkgconfig
+UDEVDIR=/lib/udev/rules.d
 
 LIB_NAME = libdlm
 LIB_MAJOR = 3
