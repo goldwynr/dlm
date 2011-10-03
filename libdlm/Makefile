@@ -1,3 +1,11 @@
+DESTDIR=
+PREFIX=/usr
+LIBDIR=/usr/lib64
+HDRDIR=/usr/include 
+MANDIR=/usr/share/man
+PKGDIR=/usr/lib64/pkgconfig
+UDEVDIR=/etc/udev/rules.d
+
 LIB_NAME = libdlm
 LIB_MAJOR = 3
 LIB_MINOR = 0
@@ -5,6 +13,8 @@ LIB_O = $(LIB_NAME).o
 LIB_SO = $(LIB_NAME).so
 LIB_SMAJOR = $(LIB_SO).$(LIB_MAJOR)
 LIB_TARGET = $(LIB_SO).$(LIB_MAJOR).$(LIB_MINOR)
+LIB_PC = $(LIB_NAME).pc
+LIB_PCIN = $(LIB_NAME).pc.in
 
 LLT_NAME = libdlm_lt
 LLT_MAJOR = 3
@@ -13,6 +23,8 @@ LLT_O = $(LLT_NAME).o
 LLT_SO = $(LLT_NAME).so
 LLT_SMAJOR = $(LLT_SO).$(LLT_MAJOR)
 LLT_TARGET = $(LLT_SO).$(LLT_MAJOR).$(LLT_MINOR)
+LLT_PC = $(LLT_NAME).pc
+LLT_PCIN = $(LLT_NAME).pc.in
 
 HDR_TARGET = libdlm.h
 
@@ -72,7 +84,7 @@ LDFLAGS += -Wl
 LIB_LDFLAGS += $(LDFLAGS) -lpthread
 LLT_LDFLAGS += $(LDFLAGS)
 
-all: $(LIB_TARGET) $(LLT_TARGET)
+all: $(LIB_TARGET) $(LLT_TARGET) $(LIB_PC) $(LLT_PC)
 
 $(LIB_O): $(SOURCE) 
 	$(CC) $(LIB_CFLAGS) -c -o $@ $<
@@ -90,27 +102,30 @@ $(LLT_TARGET): $(LLT_O)
 	ln -sf $(LLT_TARGET) $(LLT_SO)
 	ln -sf $(LLT_TARGET) $(LLT_SMAJOR)
 
+$(LIB_PC): $(LIB_PCIN)
+	cat $(LIB_PCIN) | sed -e 's#@PREFIX@#$(PREFIX)#g' > $@
+
+$(LLT_PC): $(LLT_PCIN)
+	cat $(LIB_PCIN) | sed -e 's#@PREFIX@#$(PREFIX)#g' > $@
+
 clean:
-	rm -f *.o *.so *.so.* *.a
+	rm -f *.o *.so *.so.* *.a *.pc
 
 INSTALL=$(shell which install)
-
-DESTDIR=
-LIBDIR=/usr/lib64
-HDRDIR=/usr/include 
-MANDIR=/usr/share/man
-UDEVDIR=/etc/udev/rules.d
 
 .PHONY: install
 install: all
 	$(INSTALL) -d $(DESTDIR)/$(LIBDIR)
 	$(INSTALL) -d $(DESTDIR)/$(HDRDIR)
 	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man3
+	$(INSTALL) -d $(DESTDIR)/$(PKGDIR)
 	$(INSTALL) -d $(DESTDIR)/$(UDEVDIR)
 	$(INSTALL) -c -m 755 $(LIB_TARGET) $(DESTDIR)/$(LIBDIR)
 	$(INSTALL) -c -m 755 $(LLT_TARGET) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LIB_SO) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LLT_SO) $(DESTDIR)/$(LIBDIR)
+	$(INSTALL) -m 644 $(LIB_PC) $(DESTDIR)/$(PKGDIR)
+	$(INSTALL) -m 644 $(LLT_PC) $(DESTDIR)/$(PKGDIR)
 	$(INSTALL) -c -m 644 $(HDR_TARGET) $(DESTDIR)/$(HDRDIR)
 	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man3/
 	$(INSTALL) -m 644 $(UDEV_TARGET) $(DESTDIR)/$(UDEVDIR)
