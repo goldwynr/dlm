@@ -4,6 +4,9 @@
 #include <linux/genetlink.h>
 #include <linux/dlm_netlink.h>
 
+#include "copyright.cf"
+#include "version.cf"
+
 #define CLIENT_NALLOC	32
 static int client_maxi;
 static int client_size = 0;
@@ -1149,7 +1152,7 @@ static void read_arguments(int argc, char **argv)
 
 		case 'V':
 			printf("dlm_controld %s (built %s %s)\n",
-				VERSION, __DATE__, __TIME__);
+				RELEASE_VERSION, __DATE__, __TIME__);
 			printf("%s\n", REDHAT_COPYRIGHT);
 			exit(EXIT_SUCCESS);
 			break;
@@ -1210,7 +1213,7 @@ int main(int argc, char **argv)
 	}
 	lockfile();
 	init_logging();
-	log_level(NULL, LOG_INFO, "dlm_controld %s started", VERSION);
+	log_level(NULL, LOG_INFO, "dlm_controld %s started", RELEASE_VERSION);
 	signal(SIGTERM, sigterm_handler);
 	set_scheduler();
 

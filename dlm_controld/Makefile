@@ -45,7 +45,7 @@ BIN_CFLAGS += -D_GNU_SOURCE -g \
 
 BIN_CFLAGS += -fPIE -DPIE
 BIN_CFLAGS += `xml2-config --cflags`
-BIN_CFLAGS += -I../libdlm
+BIN_CFLAGS += -I../include -I../libdlm
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
 BIN_LDFLAGS += `xml2-config --libs`

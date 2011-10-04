@@ -47,10 +47,8 @@
 #define CLUSTERVARLIB "/var/lib/cluster"
 #define CLUSTERVARRUN "/var/run/cluster"
 #define LOGDIR "/var/log/cluster"
-#define VERSION "master"
 #define SYSLOGFACILITY LOG_LOCAL4
 #define SYSLOGLEVEL LOG_INFO
-#define REDHAT_COPYRIGHT "Copyright (C) Red Hat, Inc.  2004-2011  All rights reserved."
 #define LOCKFILE_NAME CLUSTERVARRUN "/dlm_controld.pid"
 #define DAEMON_NAME "dlm_controld"
 #define DEFAULT_LOG_MODE LOG_MODE_OUTPUT_FILE|LOG_MODE_OUTPUT_SYSLOG
