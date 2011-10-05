@@ -43,20 +43,27 @@
 #include "rbtree.h"
 #include "linux_endian.h"
 
-/* TODO: cleanup */
-#define CLUSTERVARLIB "/var/lib/cluster"
-#define CLUSTERVARRUN "/var/run/cluster"
-#define LOGDIR "/var/log/cluster"
-#define SYSLOGFACILITY LOG_LOCAL4
-#define SYSLOGLEVEL LOG_INFO
-#define LOCKFILE_NAME CLUSTERVARRUN "/dlm_controld.pid"
-#define DAEMON_NAME "dlm_controld"
-#define DEFAULT_LOG_MODE LOG_MODE_OUTPUT_FILE|LOG_MODE_OUTPUT_SYSLOG
-#define DEFAULT_SYSLOG_FACILITY SYSLOGFACILITY
-#define DEFAULT_SYSLOG_PRIORITY SYSLOGLEVEL
-#define DEFAULT_LOGFILE_PRIORITY LOG_INFO /* ? */
-#define DEFAULT_LOGFILE LOGDIR "/" DAEMON_NAME ".log"
-#define DLM_CONFIG_FILE "/etc/dlm.conf"
+/* TODO: get CONFDIR, LOGDIR, RUNDIR from build */
+
+#define RUNDIR                   "/var/run/cluster"
+#define LOGDIR                   "/var/log/cluster"
+#define CONFDIR                  "/etc"
+
+#define RUN_FILE_NAME            "dlm_controld.pid"
+#define LOG_FILE_NAME            "dlm_controld.log"
+#define CONF_FILE_NAME           "dlm.conf"
+
+#define RUN_FILE_PATH            RUNDIR "/" RUN_FILE_NAME
+#define LOG_FILE_PATH            LOGDIR "/" LOG_FILE_NAME
+#define CONF_FILE_PATH           CONFDIR "/" CONF_FILE_NAME
+
+#define DEFAULT_LOG_MODE         LOG_MODE_OUTPUT_FILE | LOG_MODE_OUTPUT_SYSLOG
+#define DEFAULT_SYSLOG_FACILITY  LOG_LOCAL4
+#define DEFAULT_SYSLOG_PRIORITY  LOG_INFO
+#define DEFAULT_LOGFILE_PRIORITY LOG_INFO
+#define DEFAULT_LOGFILE          LOG_FILE_PATH
+
+#define DAEMON_NAME              "dlm_controld"
 
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.

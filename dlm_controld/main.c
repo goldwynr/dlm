@@ -989,20 +989,29 @@ static void loop(void)
 		log_error("abandoned lockspace %s", ls->name);
 }
 
-static void lockfile(void)
+static int lockfile(const char *dir, const char *name)
 {
-	int fd, error;
+	char path[PATH_MAX];
+	char buf[16];
 	struct flock lock;
-	char buf[33];
+	mode_t old_umask;
+	int fd, rv;
 
-	memset(buf, 0, 33);
+	old_umask = umask(0022);
+	rv = mkdir(dir, 0777);
+	if (rv < 0 && errno != EEXIST) {
+		umask(old_umask);
+		return rv;
+	}
+	umask(old_umask);
 
-	fd = open(LOCKFILE_NAME, O_CREAT|O_WRONLY,
-		  S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+	snprintf(path, PATH_MAX, "%s/%s", dir, name);
+
+	fd = open(path, O_CREAT|O_WRONLY|O_CLOEXEC, 0666);
 	if (fd < 0) {
-		fprintf(stderr, "cannot open/create lock file %s\n",
-			LOCKFILE_NAME);
-		exit(EXIT_FAILURE);
+		log_error("lockfile open error %s: %s",
+			  path, strerror(errno));
+		return -1;
 	}
 
 	lock.l_type = F_WRLCK;
@@ -1010,25 +1019,43 @@ static void lockfile(void)
 	lock.l_whence = SEEK_SET;
 	lock.l_len = 0;
 
-	error = fcntl(fd, F_SETLK, &lock);
-	if (error) {
-		fprintf(stderr, "dlm_controld is already running\n");
-		exit(EXIT_FAILURE);
+	rv = fcntl(fd, F_SETLK, &lock);
+	if (rv < 0) {
+		log_error("lockfile setlk error %s: %s",
+			  path, strerror(errno));
+		goto fail;
 	}
 
-	error = ftruncate(fd, 0);
-	if (error) {
-		fprintf(stderr, "cannot clear lock file %s\n", LOCKFILE_NAME);
-		exit(EXIT_FAILURE);
+	rv = ftruncate(fd, 0);
+	if (rv < 0) {
+		log_error("lockfile truncate error %s: %s",
+			  path, strerror(errno));
+		goto fail;
 	}
 
-	sprintf(buf, "%d\n", getpid());
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, sizeof(buf), "%d\n", getpid());
 
-	error = write(fd, buf, strlen(buf));
-	if (error <= 0) {
-		fprintf(stderr, "cannot write lock file %s\n", LOCKFILE_NAME);
-		exit(EXIT_FAILURE);
+	rv = write(fd, buf, strlen(buf));
+	if (rv <= 0) {
+		log_error("lockfile write error %s: %s",
+			  path, strerror(errno));
+		goto fail;
 	}
+
+	return fd;
+ fail:
+	close(fd);
+	return -1;
+}
+
+static void unlink_lockfile(int fd, const char *dir, const char *name)
+{
+	char path[PATH_MAX];
+
+	snprintf(path, PATH_MAX, "%s/%s", dir, name);
+	unlink(path);
+	close(fd);
 }
 
 static void print_usage(void)
@@ -1200,6 +1227,8 @@ static void set_scheduler(void)
 
 int main(int argc, char **argv)
 {
+	int fd;
+
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);
 
@@ -1211,7 +1240,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 	}
-	lockfile();
+	fd = lockfile(RUNDIR, RUN_FILE_NAME);
 	init_logging();
 	log_level(NULL, LOG_INFO, "dlm_controld %s started", RELEASE_VERSION);
 	signal(SIGTERM, sigterm_handler);
@@ -1219,6 +1248,7 @@ int main(int argc, char **argv)
 
 	loop();
 
+	unlink_lockfile(fd, RUNDIR, RUN_FILE_NAME);
 	return 0;
 }
 

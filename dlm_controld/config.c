@@ -46,18 +46,18 @@ void setup_config(int update)
 	xmlNode *root;
 	xmlChar *str;
 
-	if (!path_exists(DLM_CONFIG_FILE))
+	if (!path_exists(CONF_FILE_PATH))
 		return;
 
-	doc = xmlParseFile(DLM_CONFIG_FILE);
+	doc = xmlParseFile(CONF_FILE_PATH);
 	if (!doc) {
-		log_error("xml parse error %d %s", errno, DLM_CONFIG_FILE);
+		log_error("xml parse error %d %s", errno, CONF_FILE_PATH);
 		return;
 	}
 
 	root = xmlDocGetRootElement(doc);
 	if (!root) {
-		log_error("xml root error %d %s", errno, DLM_CONFIG_FILE);
+		log_error("xml root error %d %s", errno, CONF_FILE_PATH);
 		xmlFreeDoc(doc);
 		return;
 	}

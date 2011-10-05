@@ -30,7 +30,8 @@ void init_logging(void)
 
 void setup_logging(void)
 {
-	/* TODO */
+
+	/* TODO: look for settings for each of these in dlm.conf */
 	/*
 	ccs_read_logging(ccs_handle, DAEMON_NAME,
 			 &cfgd_debug_logfile, &log_mode,
