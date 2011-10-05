@@ -1,3 +1,8 @@
+DESTDIR=
+PREFIX=/usr
+BINDIR=$(PREFIX)/sbin
+MANDIR=$(PREFIX)/share/man
+
 BIN_TARGET = dlm_tool
 MAN_TARGET = dlm_tool.8
 
@@ -40,10 +45,6 @@ clean:
 
 
 INSTALL=$(shell which install)
-
-DESTDIR=
-BINDIR=/usr/sbin
-MANDIR=/usr/share/man
 
 .PHONY: install
 install: all

@@ -1,3 +1,12 @@
+DESTDIR=
+PREFIX=/usr
+LIBNUM=/lib64
+BINDIR=$(PREFIX)/sbin
+LIBDIR=$(PREFIX)/$(LIBNUM)
+HDRDIR=$(PREFIX)/include 
+MANDIR=$(PREFIX)/share/man
+INIDIR=/etc/init.d
+
 BIN_TARGET = dlm_controld
 
 MAN_TARGET = dlm_controld.8
@@ -75,13 +84,6 @@ clean:
 
 
 INSTALL=$(shell which install)
-
-DESTDIR=
-BINDIR=/usr/sbin
-LIBDIR=/usr/lib64
-HDRDIR=/usr/include 
-MANDIR=/usr/share/man
-INIDIR=/etc/init.d
 
 .PHONY: install
 install: all
