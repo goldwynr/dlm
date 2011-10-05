@@ -1,0 +1,110 @@
+#!/bin/sh
+#
+# dlm_controld
+#
+# chkconfig: 21 79
+# description: starts and stops dlm_controld
+#
+
+
+### BEGIN INIT INFO
+# Provides: dlm_controld
+# Required-Start: $network $time $syslog corosync
+# Required-Stop: $syslog
+# Should-Start:
+# Should-Stop:
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: starts and stops dlm_controld
+# Description: starts and stops dlm_controld
+### END INIT INFO
+
+. /etc/rc.d/init.d/functions
+
+prog="dlm_controld"
+progdir="cluster"
+lockfile="/var/run/$progdir/$prog.pid"
+exec="/usr/sbin/$prog"
+
+[ -f /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
+
+start() {
+	[ -x $exec ] || exit 5
+
+	if [ ! -d /var/run/$progdir ]; then
+		mkdir -p /var/run/$progdir
+		[ -x /usr/sbin/restorecon ] && restorecon /var/run/$progdir
+	fi
+
+	echo -n $"Starting $prog: "
+	daemon $prog $DLM_CONTROLD_OPTS
+	retval=$?
+	echo
+	[ $retval -eq 0 ]
+	return $retval
+}
+
+stop() {
+	echo -n $"Stopping $prog: "
+	killproc -p $lockfile $prog -TERM
+	retval=$?
+	echo
+	[ $retval -eq 0 ]
+}
+
+wait_for_stop() {
+	while [ -e $lockfile ]; do
+		sleep .5
+	done
+}
+
+restart() {
+	stop
+	wait_for_stop
+	start
+}
+
+reload() {
+	restart
+}
+
+rh_status() {
+	status $prog
+}
+
+rh_status_q() {
+	rh_status >/dev/null 2>&1
+}
+
+case "$1" in
+	start)
+		rh_status_q && exit 0
+		$1
+		;;
+	stop)
+		rh_status_q || exit 0
+		$1
+		;;
+	restart)
+		$1
+		;;
+	reload)
+		rh_status_q || exit 7
+		$1
+		;;
+	force-reload)
+		force_reload
+		;;
+	status)
+		rh_status
+		;;
+	condrestart|try-restart)
+		rh_status_q || exit 0
+		restart
+		;;
+	*)
+		echo $"Usage $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload}"
+		exit 2
+esac
+exit $?
+
