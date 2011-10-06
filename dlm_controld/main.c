@@ -1,3 +1,11 @@
+/*
+ * Copyright (C) 2004-2011 Red Hat, Inc.  All rights reserved.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License v.2.
+ */
+
 #define EXTERN
 #include "dlm_daemon.h"
 #include <pthread.h>
