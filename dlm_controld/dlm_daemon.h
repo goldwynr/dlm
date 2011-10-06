@@ -293,7 +293,7 @@ int dlm_leave_lockspace(struct lockspace *ls);
 const char *msg_name(int type);
 void update_flow_control_status(void);
 void node_history_cluster_add(int nodeid);
-void node_history_cluster_remove(int nodeid);
+void node_history_cluster_rem(int nodeid);
 int set_node_info(struct lockspace *ls, int nodeid, struct dlmc_node *node);
 int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace);
 int set_lockspaces(int *count, struct dlmc_lockspace **lss_out);

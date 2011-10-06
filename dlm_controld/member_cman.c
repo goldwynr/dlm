@@ -69,7 +69,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 		if (!is_cluster_member(old_nodes[i])) {
 			log_debug("cluster node %u removed seq %u",
 				  old_nodes[i], cluster_ringid_seq);
-			node_history_cluster_remove(old_nodes[i]);
+			node_history_cluster_rem(old_nodes[i]);
 			del_configfs_node(old_nodes[i]);
 		}
 	}

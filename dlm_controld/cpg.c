@@ -34,37 +34,46 @@ struct protocol {
 	};
 };
 
-struct member {
-	struct list_head list;
-	int nodeid;
-	int start;   /* 1 if we received a start message for this change */
-	int added;   /* 1 if added by this change */
-	int failed;  /* 1 if failed in this change */
-	int disallowed;
-	uint32_t start_flags;
-};
+/* per dlm_controld cpg: daemon_nodes */
 
-struct node {
+struct node_daemon {
 	struct list_head list;
 	int nodeid;
-	int check_fencing;
-	int check_quorum;
-	int check_fs;
-	int fs_notified;
-	uint64_t add_time;
-	uint64_t fail_time;
-	uint64_t fence_time;	/* for debug */
-	uint64_t cluster_add_time;
-	uint64_t cluster_remove_time;
-	uint32_t fence_queries;	/* for debug */
-	uint32_t added_seq;	/* for queries */
-	uint32_t removed_seq;	/* for queries */
-	int failed_reason;	/* for queries */
 
 	struct protocol proto;
 };
 
-/* One of these change structs is created for every confchg a cpg gets. */
+/* per lockspace cpg: ls->node_history */
+
+struct node {
+	struct list_head list;
+	int nodeid;
+
+	uint64_t cluster_add_time;
+	uint64_t cluster_rem_time;
+	int cluster_member;
+
+	uint64_t lockspace_add_time;
+	uint64_t lockspace_rem_time;
+	uint64_t lockspace_fail_time;
+	uint32_t lockspace_add_seq;
+	uint32_t lockspace_rem_seq;
+	int lockspace_member;
+	int lockspace_fail_reason;
+
+	uint64_t start_time;
+
+	int check_fencing;
+	int check_quorum;
+	int check_fs;
+
+	int fs_notified;
+
+	uint64_t fence_time;	/* for debug */
+	uint32_t fence_queries;	/* for debug */
+};
+
+/* per lockspace confchg: ls->changes */
 
 #define CGST_WAIT_CONDITIONS 1
 #define CGST_WAIT_MESSAGES   2
@@ -82,6 +91,18 @@ struct change {
 	uint32_t seq; /* used as a reference for debugging, and for queries */
 	uint32_t combined_seq; /* for queries */
 	uint64_t create_time;
+};
+
+/* per lockspace change member: cg->members */
+
+struct member {
+	struct list_head list;
+	int nodeid;
+	int start;   /* 1 if we received a start message for this change */
+	int added;   /* 1 if added by this change */
+	int failed;  /* 1 if failed in this change */
+	int disallowed;
+	uint32_t start_flags;
 };
 
 struct ls_info {
@@ -371,7 +392,7 @@ static void free_ls(struct lockspace *ls)
 
    For 1:
    - node X fails
-   - we see node X fail and X has non-zero add_time,
+   - we see node X fail and X has non-zero start_time,
      set check_fencing and record the fail time
    - wait for X to be removed from all dlm cpg's  (probably not necessary)
    - check that the fencing time is later than the recorded time above
@@ -387,15 +408,15 @@ static void free_ls(struct lockspace *ls)
      continue running properly once the remerged node is properly reset
 
    ls->node_history
-   when we see a node not in this list, add entry for it with zero add_time
-   record the time we get a good start message from the node, add_time
-   clear add_time if the node leaves
-   if node fails with non-zero add_time, set check_fencing
-   when a node is fenced, clear add_time and clear check_fencing
-   if a node remerges after this, no good start message, no new add_time set
-   if a node fails with zero add_time, it doesn't need fencing
+   when we see a node not in this list, add entry for it with zero start_time
+   record the time we get a good start message from the node, start_time
+   clear start_time if the node leaves
+   if node fails with non-zero start_time, set check_fencing
+   when a node is fenced, clear start_time and clear check_fencing
+   if a node remerges after this, no good start message, no new start_time set
+   if a node fails with zero start_time, it doesn't need fencing
    if a node remerges before it's been fenced, no good start message, no new
-   add_time set 
+   start_time set 
 */
 
 static struct node *get_node_history(struct lockspace *ls, int nodeid)
@@ -409,26 +430,22 @@ static struct node *get_node_history(struct lockspace *ls, int nodeid)
 	return NULL;
 }
 
-static void node_history_init(struct lockspace *ls, int nodeid,
-			      struct change *cg)
+static struct node *get_node_history_create(struct lockspace *ls, int nodeid)
 {
 	struct node *node;
 
 	node = get_node_history(ls, nodeid);
 	if (node)
-		goto out;
+		return node;
 
 	node = malloc(sizeof(struct node));
 	if (!node)
-		return;
+		return NULL;
 	memset(node, 0, sizeof(struct node));
 
 	node->nodeid = nodeid;
-	node->add_time = 0;
 	list_add_tail(&node->list, &ls->node_history);
- out:
-	if (cg)
-		node->added_seq = cg->seq;	/* for queries */
+	return node;
 }
 
 void node_history_cluster_add(int nodeid)
@@ -437,20 +454,17 @@ void node_history_cluster_add(int nodeid)
 	struct node *node;
 
 	list_for_each_entry(ls, &lockspaces, list) {
-		node_history_init(ls, nodeid, NULL);
-
-		node = get_node_history(ls, nodeid);
+		node = get_node_history_create(ls, nodeid);
 		if (!node) {
-			log_error("node_history_cluster_add no nodeid %d",
-				  nodeid);
+			log_error("node_history_cluster_add no nodeid %d", nodeid);
 			return;
 		}
-
 		node->cluster_add_time = time(NULL);
+		node->cluster_member = 1;
 	}
 }
 
-void node_history_cluster_remove(int nodeid)
+void node_history_cluster_rem(int nodeid)
 {
 	struct lockspace *ls;
 	struct node *node;
@@ -458,59 +472,63 @@ void node_history_cluster_remove(int nodeid)
 	list_for_each_entry(ls, &lockspaces, list) {
 		node = get_node_history(ls, nodeid);
 		if (!node) {
-			log_error("node_history_cluster_remove no nodeid %d",
-				  nodeid);
+			log_error("node_history_cluster_rem no nodeid %d", nodeid);
 			return;
 		}
-
-		node->cluster_remove_time = time(NULL);
+		node->cluster_rem_time = time(NULL);
+		node->cluster_member = 0;
 	}
 }
 
-static void node_history_start(struct lockspace *ls, int nodeid)
-{
-	struct node *node;
-	
-	node = get_node_history(ls, nodeid);
-	if (!node) {
-		log_error("node_history_start no nodeid %d", nodeid);
-		return;
-	}
-
-	node->add_time = time(NULL);
-}
-
-static void node_history_left(struct lockspace *ls, int nodeid,
-			      struct change *cg)
+static void node_history_lockspace_add(struct lockspace *ls, int nodeid,
+				       struct change *cg)
 {
 	struct node *node;
 
-	node = get_node_history(ls, nodeid);
+	node = get_node_history_create(ls, nodeid);
 	if (!node) {
-		log_error("node_history_left no nodeid %d", nodeid);
+		log_error("node_history_lockspace_add no nodeid %d", nodeid);
 		return;
 	}
 
-	node->add_time = 0;
-	node->removed_seq = cg->seq;	/* for queries */
+	node->lockspace_add_time = time(NULL);
+	node->lockspace_add_seq = cg->seq;
+	node->lockspace_member = 1;
 }
 
-static void node_history_fail(struct lockspace *ls, int nodeid,
-			      struct change *cg, int reason)
+static void node_history_lockspace_left(struct lockspace *ls, int nodeid,
+					struct change *cg)
 {
 	struct node *node;
 
 	node = get_node_history(ls, nodeid);
 	if (!node) {
-		log_error("node_history_fail no nodeid %d", nodeid);
+		log_error("node_history_lockspace_left no nodeid %d", nodeid);
 		return;
 	}
 
-	if (cfgd_enable_fencing && node->add_time) {
+	node->start_time = 0;
+
+	node->lockspace_rem_time = time(NULL);
+	node->lockspace_rem_seq = cg->seq;	/* for queries */
+	node->lockspace_member = 0;
+}
+
+static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
+					struct change *cg, int reason)
+{
+	struct node *node;
+
+	node = get_node_history(ls, nodeid);
+	if (!node) {
+		log_error("node_history_lockspace_fail no nodeid %d", nodeid);
+		return;
+	}
+
+	if (cfgd_enable_fencing && node->start_time) {
 		node->check_fencing = 1;
 		node->fence_time = 0;
 		node->fence_queries = 0;
-		node->fail_time = time(NULL);
 	}
 
 	/* fenced will take care of making sure the quorum value
@@ -524,8 +542,24 @@ static void node_history_fail(struct lockspace *ls, int nodeid,
 		node->check_fs = 1;
 	}
 
-	node->removed_seq = cg->seq;	/* for queries */
-	node->failed_reason = reason;	/* for queries */
+	node->lockspace_rem_time = time(NULL);
+	node->lockspace_rem_seq = cg->seq;	/* for queries */
+	node->lockspace_member = 0;
+	node->lockspace_fail_reason = reason;	/* for queries */
+	node->lockspace_fail_time = node->lockspace_rem_time;
+}
+
+static void node_history_start(struct lockspace *ls, int nodeid)
+{
+	struct node *node;
+	
+	node = get_node_history(ls, nodeid);
+	if (!node) {
+		log_error("node_history_start no nodeid %d", nodeid);
+		return;
+	}
+
+	node->start_time = time(NULL);
 }
 
 static int check_fencing_done(struct lockspace *ls)
@@ -545,7 +579,7 @@ static int check_fencing_done(struct lockspace *ls)
 			continue;
 
 		/* check with fenced to see if the node has been
-		   fenced since node->add_time */
+		   fenced since node->start_time */
 
 		rv = fence_node_time(node->nodeid, &last_fenced_time);
 		if (rv < 0)
@@ -555,24 +589,24 @@ static int check_fencing_done(struct lockspace *ls)
 		   we've seen fenced_time within the same second as
 		   fail_time: with external fencing, e.g. fence_node */
 
-		if (last_fenced_time >= node->fail_time) {
+		if (last_fenced_time >= node->lockspace_fail_time) {
 			log_group(ls, "check_fencing %d done "
-				  "add %llu fail %llu last %llu",
+				  "start %llu fail %llu last %llu",
 				  node->nodeid,
-				  (unsigned long long)node->add_time,
-				  (unsigned long long)node->fail_time,
+				  (unsigned long long)node->start_time,
+				  (unsigned long long)node->lockspace_fail_time,
 				  (unsigned long long)last_fenced_time);
 			node->check_fencing = 0;
-			node->add_time = 0;
+			node->start_time = 0;
 			node->fence_time = last_fenced_time;
 		} else {
 			if (!node->fence_queries ||
 			    node->fence_time != last_fenced_time) {
 				log_group(ls, "check_fencing %d wait "
-					  "add %llu fail %llu last %llu",
+					  "start %llu fail %llu last %llu",
 					  node->nodeid,
-					 (unsigned long long)node->add_time,
-					 (unsigned long long)node->fail_time,
+					 (unsigned long long)node->start_time,
+					 (unsigned long long)node->lockspace_fail_time,
 					 (unsigned long long)last_fenced_time);
 				node->fence_queries++;
 				node->fence_time = last_fenced_time;
@@ -1415,11 +1449,12 @@ static int add_change(struct lockspace *ls,
 		}
 		list_add_tail(&memb->list, &cg->removed);
 
-		if (memb->failed)
-			node_history_fail(ls, memb->nodeid, cg,
-					  left_list[i].reason);
-		else
-			node_history_left(ls, memb->nodeid, cg);
+		if (memb->failed) {
+			node_history_lockspace_fail(ls, memb->nodeid, cg,
+						    left_list[i].reason);
+		} else {
+			node_history_lockspace_left(ls, memb->nodeid, cg);
+		}
 
 		log_group(ls, "add_change cg %u remove nodeid %d reason %d",
 			  cg->seq, memb->nodeid, left_list[i].reason);
@@ -1437,10 +1472,11 @@ static int add_change(struct lockspace *ls,
 		}
 		memb->added = 1;
 
-		if (memb->nodeid == our_nodeid)
+		if (memb->nodeid == our_nodeid) {
 			cg->we_joined = 1;
-		else
-			node_history_init(ls, memb->nodeid, cg);
+		} else {
+			node_history_lockspace_add(ls, memb->nodeid, cg);
+		}
 
 		log_group(ls, "add_change cg %u joined nodeid %d", cg->seq,
 			  memb->nodeid);
@@ -1448,8 +1484,9 @@ static int add_change(struct lockspace *ls,
 
 	if (cg->we_joined) {
 		log_group(ls, "add_change cg %u we joined", cg->seq);
-		list_for_each_entry(memb, &cg->members, list)
-			node_history_init(ls, memb->nodeid, cg);
+		list_for_each_entry(memb, &cg->members, list) {
+			node_history_lockspace_add(ls, memb->nodeid, cg);
+		}
 	}
 
 	log_group(ls, "add_change cg %u counts member %d joined %d remove %d "
@@ -1879,9 +1916,9 @@ int dlm_leave_lockspace(struct lockspace *ls)
 	return 0;
 }
 
-static struct node *get_node_daemon(int nodeid)
+static struct node_daemon *get_node_daemon(int nodeid)
 {
-	struct node *node;
+	struct node_daemon *node;
 
 	list_for_each_entry(node, &daemon_nodes, list) {
 		if (node->nodeid == nodeid)
@@ -1892,7 +1929,7 @@ static struct node *get_node_daemon(int nodeid)
 
 static void add_node_daemon(int nodeid)
 {
-	struct node *node;
+	struct node_daemon *node;
 
 	if (get_node_daemon(nodeid))
 		return;
@@ -1944,7 +1981,7 @@ static void protocol_out(struct protocol *proto)
 
 static int all_protocol_messages(void)
 {
-	struct node *node;
+	struct node_daemon *node;
 	int i;
 
 	if (!daemon_member_count)
@@ -1968,7 +2005,7 @@ static int pick_min_protocol(struct protocol *proto)
 {
 	uint16_t mind[4];
 	uint16_t mink[4];
-	struct node *node;
+	struct node_daemon *node;
 	int i;
 
 	memset(&mind, 0, sizeof(mind));
@@ -2052,7 +2089,7 @@ static int pick_min_protocol(struct protocol *proto)
 static void receive_protocol(struct dlm_header *hd, int len)
 {
 	struct protocol *p;
-	struct node *node;
+	struct node_daemon *node;
 
 	p = (struct protocol *)((char *)hd + sizeof(struct dlm_header));
 	protocol_in(p);
@@ -2518,9 +2555,9 @@ static int _set_node_info(struct lockspace *ls, struct change *cg, int nodeid,
 	if (n->check_fs)
 		node->flags |= DLMC_NF_CHECK_FS;
 
-	node->added_seq = n->added_seq;
-	node->removed_seq = n->removed_seq;
-	node->failed_reason = n->failed_reason;
+	node->added_seq = n->lockspace_add_seq;
+	node->removed_seq = n->lockspace_rem_seq;
+	node->failed_reason = n->lockspace_fail_reason;
  out:
 	return 0;
 }
