@@ -26,7 +26,6 @@ static struct timeval plock_recv_time;
 static struct timeval plock_rate_last;
 
 static int plock_device_fd = -1;
-static int need_fsid_translation = 0;
 
 extern int message_flow_control_on;
 
@@ -163,13 +162,6 @@ static const char *ex_str(int optype, int ex)
 		return "RD";
 }
 
-/*
- * In kernels before 2.6.26, plocks came from gfs2's lock_dlm module.
- * Reading plocks from there as well should allow us to use cluster3
- * on old (RHEL5) kernels.  In this case, the fsid we read in plock_info
- * structs is the mountgroup id, which we need to translate to the ls id.
- */
-
 int setup_plocks(void)
 {
 	plock_read_count = 0;
@@ -181,10 +173,6 @@ int setup_plocks(void)
 
 	if (plock_minor) {
 		plock_device_fd = open("/dev/misc/dlm_plock", O_RDWR);
-	} else if (old_plock_minor) {
-		log_debug("setup_plocks using old lock_dlm interface");
-		need_fsid_translation = 1;
-		plock_device_fd = open("/dev/misc/lock_dlm_plock", O_RDWR);
 	}
 
 	if (plock_device_fd < 0) {
@@ -193,9 +181,6 @@ int setup_plocks(void)
 	}
 
 	log_debug("plocks %d", plock_device_fd);
-	log_debug("plock cpg message size: %u bytes",
-		  (unsigned int) (sizeof(struct dlm_header) +
-		                  sizeof(struct dlm_plock_info)));
 
 	return plock_device_fd;
 }
@@ -204,26 +189,6 @@ void close_plocks(void)
 {
 	if (plock_device_fd > 0)
 		close(plock_device_fd);
-}
-
-static uint32_t mg_to_ls_id(uint32_t fsid)
-{
-	struct lockspace *ls;
-	int do_set = 1;
-
- retry:
-	list_for_each_entry(ls, &lockspaces, list) {
-		if (ls->associated_mg_id == fsid)
-			return ls->global_id;
-	}
-
-	if (do_set) {
-		do_set = 0;
-		set_associated_id(fsid);
-		goto retry;
-	}
-
-	return fsid;
 }
 
 /* FIXME: unify these two */
@@ -724,9 +689,6 @@ static int add_waiter(struct lockspace *ls, struct resource *r,
 static void write_result(struct lockspace *ls, struct dlm_plock_info *in,
 			 int rv)
 {
-	if (need_fsid_translation)
-		in->fsid = ls->associated_mg_id;
-
 	in->rv = rv;
 	write(plock_device_fd, in, sizeof(struct dlm_plock_info));
 }
@@ -1581,9 +1543,6 @@ void process_plocks(int ci)
 		rv = -ENOSYS;
 		goto fail;
 	}
-
-	if (need_fsid_translation)
-		info.fsid = mg_to_ls_id(info.fsid);
 
 	ls = find_ls_id(info.fsid);
 	if (!ls) {

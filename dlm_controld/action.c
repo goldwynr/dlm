@@ -15,7 +15,6 @@ static int dir_members[MAX_NODES];
 static int dir_members_count;
 static int comms_nodes[MAX_NODES];
 static int comms_nodes_count;
-static char mg_name[DLM_LOCKSPACE_LEN+1];
 
 #define DLM_SYSFS_DIR "/sys/kernel/dlm"
 #define CLUSTER_DIR   "/sys/kernel/config/dlm/cluster"
@@ -74,87 +73,6 @@ static int detect_protocol(void)
 	return proto;
 }
 
-/* look for an id that matches in e.g. /sys/fs/gfs/bull\:x/lock_module/id
-   and then extract the "x" as the name */
-
-static int get_mountgroup_name(uint32_t mg_id)
-{
-	char path[PATH_MAX];
-	char *fsname;
-	const char *fsdir;
-	DIR *d;
-	FILE *file;
-	struct dirent *de;
-	uint32_t id;
-	int retry_gfs2 = 1;
-	int rv, error;
-
-	fsdir = "/sys/fs/gfs";
- retry:
-	rv = -1;
-
-	d = opendir(fsdir);
-	if (!d) {
-		log_debug("%s: opendir failed: %d", path, errno);
-		goto out;
-	}
-
-	while ((de = readdir(d))) {
-		if (de->d_name[0] == '.')
-			continue;
-
-		id = 0;
-		memset(path, 0, PATH_MAX);
-		snprintf(path, PATH_MAX, "%s/%s/lock_module/id",
-			 fsdir, de->d_name);
-
-		file = fopen(path, "r");
-		if (!file) {
-			log_error("can't open %s %d", path, errno);
-			continue;
-		}
-
-		error = fscanf(file, "%u", &id);
-		fclose(file);
-
-		if (error != 1) {
-			log_error("bad read %s %d", path, errno);
-			continue;
-		}
-		if (id != mg_id) {
-			log_debug("get_mountgroup_name skip %x %s",
-				  id, de->d_name);
-			continue;
-		}
-
-		/* take the fsname out of clustername:fsname */
-		fsname = strstr(de->d_name, ":");
-		if (!fsname) {
-			log_debug("get_mountgroup_name skip2 %x %s",
-				  id, de->d_name);
-			continue;
-		}
-		fsname++;
-
-		log_debug("get_mountgroup_name found %x %s %s",
-			  id, de->d_name, fsname);
-		strncpy(mg_name, fsname, sizeof(mg_name));
-		rv = 0;
-		break;
-	}
-
-	closedir(d);
-
- out:
-	if (rv && retry_gfs2) {
-		retry_gfs2 = 0;
-		fsdir = "/sys/fs/gfs2";
-		goto retry;
-	}
-
-	return rv;
-}
-
 /* This is for the case where dlm_controld exits/fails, abandoning dlm
    lockspaces in the kernel, and then dlm_controld is restarted.  When
    dlm_controld exits and abandons lockspaces, that node needs to be
@@ -184,36 +102,6 @@ int check_uncontrolled_lockspaces(void)
 		return -1;
 	}
 	return 0;
-}
-
-/* find the mountgroup with "mg_id" in sysfs, get it's name, then look for
-   the ls with with the same name in lockspaces list, return its id */
-
-void set_associated_id(uint32_t mg_id)
-{
-	struct lockspace *ls;
-	int rv;
-
-	log_debug("set_associated_id mg_id %x %d", mg_id, mg_id);
-
-	memset(&mg_name, 0, sizeof(mg_name));
-
-	rv = get_mountgroup_name(mg_id);
-	if (rv) {
-		log_error("no mountgroup found with id %x", mg_id);
-		return;
-	}
-
-	ls = find_ls(mg_name);
-	if (!ls) {
-		log_error("no lockspace found with name %s for mg_id %x",
-			   mg_name, mg_id);
-		return;
-	}
-
-	log_debug("set_associated_id mg %x is ls %x", mg_id, ls->global_id);
-
-	ls->associated_mg_id = mg_id;
 }
 
 static int do_sysfs(const char *name, const char *file, char *val)
@@ -996,7 +884,6 @@ static void find_minors(void)
 	control_minor = 0;
 	monitor_minor = 0;
 	plock_minor = 0;
-	old_plock_minor = 0;
 
 	if (!(fl = fopen("/proc/misc", "r"))) {
 		log_error("/proc/misc fopen failed: %s", strerror(errno));
@@ -1014,9 +901,6 @@ static void find_minors(void)
 				found++;
 			} else if (!strcmp(name, "dlm_plock")) {
 				plock_minor = number;
-				found++;
-			} else if (!strcmp(name, "lock_dlm_plock")) {
-				old_plock_minor = number;
 				found++;
 			}
 
@@ -1076,15 +960,6 @@ int setup_misc_devices(void)
 			return rv;
 		log_debug("found /dev/misc/dlm_plock minor %u",
 			  plock_minor);
-	}
-
-	if (!plock_minor && old_plock_minor) {
-		rv = find_udev_device("/dev/misc/lock_dlm_plock",
-				      old_plock_minor);
-		if (rv < 0)
-			return rv;
-		log_debug("found /dev/misc/lock_dlm_plock minor %u",
-			  old_plock_minor);
 	}
 
 	return 0;

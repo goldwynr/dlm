@@ -132,7 +132,6 @@ EXTERN int our_nodeid;
 EXTERN uint32_t control_minor;
 EXTERN uint32_t monitor_minor;
 EXTERN uint32_t plock_minor;
-EXTERN uint32_t old_plock_minor;
 
 EXTERN int optk_debug;
 EXTERN int optk_timewarn;
@@ -240,7 +239,6 @@ struct lockspace {
 	int			save_plocks;
 	int			disable_plock;
 	uint32_t		recv_plocks_data_count;
-	uint32_t		associated_mg_id;
 	struct list_head	saved_messages;
 	struct list_head	plock_resources;
 	struct rb_root		plock_resources_root;
@@ -266,7 +264,6 @@ struct lockspace {
 };
 
 /* action.c */
-void set_associated_id(uint32_t mg_id);
 int set_sysfs_control(char *name, int val);
 int set_sysfs_event_done(char *name, int val);
 int set_sysfs_id(char *name, uint32_t id);
