@@ -62,6 +62,13 @@ int do_write(int fd, void *buf, size_t count)
 	return 0;
 }
 
+uint64_t monotime(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec;
+}
+
 static void client_alloc(void)
 {
 	int i;
@@ -871,8 +878,6 @@ static void loop(void)
 
 	setup_config(0);
 
-	setup_logging();
-
 	rv = check_uncontrolled_lockspaces();
 	if (rv < 0)
 		goto out;
@@ -1240,10 +1245,17 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 	}
-	fd = lockfile(RUNDIR, RUN_FILE_NAME);
+
 	init_logging();
+
+	fd = lockfile(RUNDIR, RUN_FILE_NAME);
+	if (fd < 0)
+		return fd;
+
 	log_level(NULL, LOG_INFO, "dlm_controld %s started", RELEASE_VERSION);
+
 	signal(SIGTERM, sigterm_handler);
+
 	set_scheduler();
 
 	loop();

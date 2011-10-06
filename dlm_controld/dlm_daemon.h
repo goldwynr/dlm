@@ -271,6 +271,7 @@ void deadlk_confchg(struct lockspace *ls,
 /* main.c */
 int do_read(int fd, void *buf, size_t count);
 int do_write(int fd, void *buf, size_t count);
+uint64_t monotime(void);
 void client_dead(int ci);
 int client_add(int fd, void (*workfn)(int ci), void (*deadfn)(int ci));
 int client_fd(int ci);
@@ -319,7 +320,6 @@ void clear_plocks_data(struct lockspace *ls);
 /* logging.c */
 
 void init_logging(void);
-void setup_logging(void);
 void close_logging(void);
 void copy_log_dump(char *buf, int *len);
 void copy_log_dump_plock(char *buf, int *len);

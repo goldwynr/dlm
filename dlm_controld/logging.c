@@ -1,14 +1,13 @@
 #include "dlm_daemon.h"
 
-static int log_mode;
 static int syslog_facility;
 static int syslog_priority;
 static int logfile_priority;
 static char logfile[PATH_MAX];
+static FILE *logfile_fp;
 
 void init_logging(void)
 {
-	log_mode = DEFAULT_LOG_MODE;
 	syslog_facility = DEFAULT_SYSLOG_FACILITY;
 	syslog_priority = DEFAULT_SYSLOG_PRIORITY;
 	logfile_priority = DEFAULT_LOGFILE_PRIORITY;
@@ -20,36 +19,22 @@ void init_logging(void)
 	if (cfgd_debug_logfile)
 		logfile_priority = LOG_DEBUG;
 
-	log_debug("logging mode %d syslog f %d p %d logfile p %d %s",
-		  log_mode, syslog_facility, syslog_priority,
-		  logfile_priority, logfile);
+	if (logfile[0]) {
+		logfile_fp = fopen(logfile, "a+");
+		if (logfile_fp != NULL) {
+			int fd = fileno(logfile_fp);
+			fcntl(fd, F_SETFD, fcntl(fd, F_GETFD, 0) | FD_CLOEXEC);
+		}
+	}
 
-	logt_init(DAEMON_NAME, log_mode, syslog_facility, syslog_priority,
-		  logfile_priority, logfile);
-}
-
-void setup_logging(void)
-{
-
-	/* TODO: look for settings for each of these in dlm.conf */
-	/*
-	ccs_read_logging(ccs_handle, DAEMON_NAME,
-			 &cfgd_debug_logfile, &log_mode,
-			 &syslog_facility, &syslog_priority,
-			 &logfile_priority, logfile);
-	*/
-
-	log_debug("logging mode %d syslog f %d p %d logfile p %d %s",
-		  log_mode, syslog_facility, syslog_priority,
-		  logfile_priority, logfile);
-
-	logt_conf(DAEMON_NAME, log_mode, syslog_facility, syslog_priority,
-		  logfile_priority, logfile);
+	openlog(DAEMON_NAME, LOG_CONS | LOG_PID, syslog_facility);
 }
 
 void close_logging(void)
 {
-	logt_exit();
+	closelog();
+	if (logfile_fp)
+		fclose(logfile_fp);
 }
 
 #define NAME_ID_SIZE 32
@@ -142,7 +127,7 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 		snprintf(name, NAME_ID_SIZE, "%s ", name_in);
 
 	ret = snprintf(log_str + pos, len - pos, "%llu %s",
-		       (unsigned long long)time(NULL), name);
+		       (unsigned long long)monotime(), name);
 
 	pos += ret;
 
@@ -162,8 +147,17 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 		log_save_str(level, pos - 1, log_dump, &log_point, &log_wrap);
 	if (plock)
 		log_save_str(level, pos - 1, log_dump_plock, &log_point_plock, &log_wrap_plock);
-	if (level)
-		logt_print(level, "%s", log_str);
+
+	if (level <= syslog_priority)
+		syslog(level, "%s", log_str);
+
+	if (level <= logfile_priority && logfile_fp) {
+		time_t logtime = time(NULL);
+		char tbuf[64];
+		strftime(tbuf, sizeof(tbuf), "%b %d %T", localtime(&logtime));
+		fprintf(logfile_fp, "%s %s", tbuf, log_str);
+		fflush(logfile_fp);
+	}
 
 	if (!daemon_debug_opt)
 		return;
