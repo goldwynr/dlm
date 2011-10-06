@@ -53,8 +53,6 @@ static int verbose;
 static int wide;
 static int summarize;
 
-#define VERSION "master"
-
 #define MAX_LS 128
 #define MAX_NODES 128
 
