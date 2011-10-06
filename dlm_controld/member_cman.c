@@ -49,6 +49,8 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	cs_error_t err;
 	int i, j, num_addrs;
 
+	if (!cluster_quorate && quorate)
+		quorate_time = time(NULL);
 
 	cluster_quorate = quorate;
 	cluster_ringid_seq = (uint32_t)ring_seq;

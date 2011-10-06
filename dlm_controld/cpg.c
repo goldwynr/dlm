@@ -8,6 +8,8 @@
 
 #include "dlm_daemon.h"
 
+#define PV_STATEFUL 0x0001
+
 struct protocol_version {
 	uint16_t major;
 	uint16_t minor;
@@ -40,6 +42,12 @@ struct node_daemon {
 	struct list_head list;
 	int nodeid;
 
+	uint64_t daemon_add_time;
+	uint64_t daemon_rem_time;
+	int daemon_member;
+
+	int killed;
+
 	struct protocol proto;
 };
 
@@ -58,17 +66,16 @@ struct node {
 	uint64_t lockspace_fail_time;
 	uint32_t lockspace_add_seq;
 	uint32_t lockspace_rem_seq;
+	uint32_t lockspace_fail_seq;
 	int lockspace_member;
 	int lockspace_fail_reason;
 
 	uint64_t start_time;
 
-	int check_fencing;
-	int check_quorum;
 	int check_fs;
-
 	int fs_notified;
 
+	int check_fencing;
 	uint64_t fence_time;	/* for debug */
 	uint32_t fence_queries;	/* for debug */
 };
@@ -181,6 +188,32 @@ static void log_config(const struct cpg_name *group_name,
 	log_debug("%s conf %zu %zu %zu memb%s join%s left%s", group_name->value,
 		  member_list_entries, joined_list_entries, left_list_entries,
 		  m_buf, j_buf, l_buf);
+}
+
+static void log_ringid(const char *name,
+                       struct cpg_ring_id *ringid,
+                       const uint32_t *member_list,
+                       size_t member_list_entries)
+{
+	char m_buf[128];
+	size_t i, len, pos;
+	int ret;
+
+	memset(m_buf, 0, sizeof(m_buf));
+
+	len = sizeof(m_buf);
+	pos = 0;
+	for (i = 0; i < member_list_entries; i++) {
+		ret = snprintf(m_buf + pos, len - pos, " %u",
+			       member_list[i]);
+		if (ret >= len - pos)
+			break;
+		pos += ret;
+	}
+
+	log_debug("%s ring %u:%llu %zu memb%s",
+		  name, ringid->nodeid, (unsigned long long)ringid->seq,
+		  member_list_entries, m_buf);
 }
 
 static void ls_info_in(struct ls_info *li)
@@ -531,12 +564,6 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 		node->fence_queries = 0;
 	}
 
-	/* fenced will take care of making sure the quorum value
-	   is adjusted for all the failures */
-
-	if (cfgd_enable_quorum && !cfgd_enable_fencing)
-		node->check_quorum = 1;
-
 	if (ls->fs_registered) {
 		log_group(ls, "check_fs nodeid %d set", nodeid);
 		node->check_fs = 1;
@@ -545,8 +572,9 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 	node->lockspace_rem_time = time(NULL);
 	node->lockspace_rem_seq = cg->seq;	/* for queries */
 	node->lockspace_member = 0;
-	node->lockspace_fail_reason = reason;	/* for queries */
 	node->lockspace_fail_time = node->lockspace_rem_time;
+	node->lockspace_fail_seq = node->lockspace_rem_seq;
+	node->lockspace_fail_reason = reason;	/* for queries */
 }
 
 static void node_history_start(struct lockspace *ls, int nodeid)
@@ -560,6 +588,24 @@ static void node_history_start(struct lockspace *ls, int nodeid)
 	}
 
 	node->start_time = time(NULL);
+}
+
+/* wait for cluster ringid and cpg ringid to be the same so we know our
+   information from each service is based on the same node state */
+
+static int check_ringid_done(struct lockspace *ls)
+{
+	if (cluster_ringid_seq != (uint32_t)ls->cpg_ringid.seq) {
+		log_debug("check_ringid cluster %u cpg %u:%llu",
+			  cluster_ringid_seq, ls->cpg_ringid.nodeid,
+			  (unsigned long long)ls->cpg_ringid.seq);
+		return 0;
+	}
+
+	log_debug("check_ringid done cluster %u cpg %u:%llu",
+		  cluster_ringid_seq, ls->cpg_ringid.nodeid,
+		  (unsigned long long)ls->cpg_ringid.seq);
+        return 1;
 }
 
 static int check_fencing_done(struct lockspace *ls)
@@ -635,42 +681,22 @@ static int check_fencing_done(struct lockspace *ls)
 	return 1;
 }
 
+/* we know that the quorum value here is consistent with the cpg events
+   because the ringid's are in sync per the previous check_ringid_done */
+
 static int check_quorum_done(struct lockspace *ls)
 {
-	struct node *node;
-	int wait_count = 0;
-
 	if (!cfgd_enable_quorum) {
 		log_group(ls, "check_quorum disabled");
 		return 1;
 	}
 
-	/* wait for quorum system (cman) to see all the same nodes failed, so
-	   we know that cluster_quorate is adjusted for the same failures we've
-	   seen (see comment in fenced about the assumption here) */
-
-	list_for_each_entry(node, &ls->node_history, list) {
-		if (!node->check_quorum)
-			continue;
-
-		if (!is_cluster_member(node->nodeid)) {
-			node->check_quorum = 0;
-		} else {
-			log_group(ls, "check_quorum nodeid %d is_cluster_member",
-				  node->nodeid);
-			wait_count++;
-		}
-	}
-
-	if (wait_count)
-		return 0;
-
 	if (!cluster_quorate) {
-		log_group(ls, "check_quorum not quorate");
+		log_debug("check_quorum not quorate");
 		return 0;
 	}
 
-	log_group(ls, "check_quorum done");
+	log_debug("check_quorum done");
 	return 1;
 }
 
@@ -798,6 +824,11 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
 
 static int wait_conditions_done(struct lockspace *ls)
 {
+	if (!check_ringid_done(ls)) {
+		poll_ringid++;
+		return 0;
+	}
+
 	/* the fencing/quorum/fs conditions need to account for all the changes
 	   that have occured since the last change applied to dlm-kernel, not
 	   just the latest change */
@@ -1235,6 +1266,11 @@ static void send_info(struct lockspace *ls, struct change *cg, int type,
 	free(buf);
 }
 
+/* fenced used the DUPLICATE_CG flag instead of sending nacks like we
+   do here.  I think the nacks didn't work for fenced for some reason,
+   but I don't remember why (possibly because the node blocked doing
+   the fencing hadn't created the cg to nack yet). */
+
 static void send_start(struct lockspace *ls, struct change *cg)
 {
 	log_group(ls, "send_start %d:%u counts %u %d %d %d %d",
@@ -1373,6 +1409,7 @@ static void apply_changes(struct lockspace *ls)
 
 	case CGST_WAIT_MESSAGES:
 		if (wait_messages_done(ls)) {
+			our_protocol.dr_ver.flags |= PV_STATEFUL;
 			start_kernel(ls);
 			prepare_plocks(ls);
 			cleanup_changes(ls);
@@ -1388,6 +1425,7 @@ void process_lockspace_changes(void)
 {
 	struct lockspace *ls, *safe;
 
+	poll_ringid = 0;
 	poll_fencing = 0;
 	poll_quorum = 0;
 	poll_fs = 0;
@@ -1767,9 +1805,40 @@ static void deliver_cb(cpg_handle_t handle,
 	apply_changes(ls);
 }
 
-static cpg_callbacks_t cpg_callbacks = {
+/* save ringid to compare with cman's.
+   also save member_list to double check with cman's member list?
+   they should match */
+
+static void totem_cb(cpg_handle_t handle,
+		     struct cpg_ring_id ring_id,
+		     uint32_t member_list_entries,
+		     const uint32_t *member_list)
+{
+	struct lockspace *ls;
+	char name[128];
+
+	ls = find_ls_handle(handle);
+	if (!ls) {
+		log_error("totem_cb no lockspace for handle");
+		return;
+	}
+
+	memset(&name, 0, sizeof(name));
+	sprintf(name, "dlm:ls:%s", ls->name);
+
+	log_ringid(name, &ring_id, member_list, member_list_entries);
+
+	ls->cpg_ringid.nodeid = ring_id.nodeid;
+	ls->cpg_ringid.seq = ring_id.seq;
+
+	apply_changes(ls);
+}
+
+static cpg_model_v1_data_t cpg_callbacks = {
 	.cpg_deliver_fn = deliver_cb,
 	.cpg_confchg_fn = confchg_cb,
+	.cpg_totem_confchg_fn = totem_cb,
+	.flags = CPG_MODEL_V1_DELIVER_INITIAL_TOTEM_CONF,
 };
 
 void update_flow_control_status(void)
@@ -1834,9 +1903,10 @@ int dlm_join_lockspace(struct lockspace *ls)
 		goto fail_free;
 	}
 
-	error = cpg_initialize(&h, &cpg_callbacks);
+	error = cpg_model_initialize(&h, CPG_MODEL_V1,
+				     (cpg_model_data_t *)&cpg_callbacks, NULL);
 	if (error != CPG_OK) {
-		log_error("cpg_initialize error %d", error);
+		log_error("cpg_model_initialize error %d", error);
 		rv = -1;
 		goto fail_free;
 	}
@@ -1861,6 +1931,7 @@ int dlm_join_lockspace(struct lockspace *ls)
 	/* TODO: allow global_id to be set in cluster.conf? */
 	ls->global_id = cpgname_to_crc(name.value, name.length);
 
+	log_debug("cpg_join %s ...", name.value);
  retry:
 	error = cpg_join(h, &name);
 	if (error == CPG_ERR_TRY_AGAIN) {
@@ -2123,21 +2194,6 @@ static void receive_protocol(struct dlm_header *hd, int len)
 		return;
 	}
 
-	/* if we have zero run values, and this msg has non-zero run values,
-	   then adopt them as ours; otherwise save this proto message */
-
-	if (our_protocol.daemon_run[0])
-		return;
-
-	if (p->daemon_run[0]) {
-		memcpy(&our_protocol.daemon_run, &p->daemon_run,
-		       sizeof(struct protocol_version));
-		memcpy(&our_protocol.kernel_run, &p->kernel_run,
-		       sizeof(struct protocol_version));
-		log_debug("run protocol from nodeid %d", hd->nodeid);
-		return;
-	}
-
 	/* save this node's proto so we can tell when we've got all, and
 	   use it to select a minimum protocol from all */
 
@@ -2146,7 +2202,75 @@ static void receive_protocol(struct dlm_header *hd, int len)
 		log_error("receive_protocol no node %d", hd->nodeid);
 		return;
 	}
+
+	if (!node->daemon_member) {
+		log_error("receive_protocol node %d not member", hd->nodeid);
+		return;
+	}
+
+	log_debug("receive_protocol from %d max %u.%u.%u.%x run %u.%u.%u.%x",
+		  hd->nodeid,
+		  p->daemon_max[0], p->daemon_max[1],
+		  p->daemon_max[2], p->daemon_max[3],
+		  p->daemon_run[0], p->daemon_run[1],
+		  p->daemon_run[2], p->daemon_run[3]);
+	log_debug("daemon node %d max %u.%u.%u.%x run %u.%u.%u.%x",
+		  hd->nodeid,
+		  node->proto.daemon_max[0], node->proto.daemon_max[1],
+		  node->proto.daemon_max[2], node->proto.daemon_max[3],
+		  node->proto.daemon_run[0], node->proto.daemon_run[1],
+		  node->proto.daemon_run[2], node->proto.daemon_run[3]);
+	log_debug("daemon node %d join %llu left %llu local quorum %llu",
+		  hd->nodeid,
+		  (unsigned long long)node->daemon_add_time,
+		  (unsigned long long)node->daemon_rem_time,
+		  (unsigned long long)quorate_time);
+
+	/* checking zero node->daemon_max[0] is a way to tell if we've received
+	   an acceptable (non-stateful) proto message from the node since we
+	   saw it join the daemon cpg */
+
+	if (hd->nodeid != our_nodeid &&
+	    !node->proto.daemon_max[0] &&
+	    (p->dr_ver.flags & PV_STATEFUL) &&
+	    (our_protocol.dr_ver.flags & PV_STATEFUL)) {
+
+		log_debug("daemon node %d stateful merge", hd->nodeid);
+
+		if (cluster_quorate && node->daemon_rem_time &&
+		    quorate_time < node->daemon_rem_time) {
+			log_debug("daemon node %d kill due to stateful merge", hd->nodeid);
+			if (!node->killed)
+				kick_node_from_cluster(hd->nodeid);
+			node->killed = 1;
+		}
+
+		/* don't save p->proto into node->proto; we need to come
+		   through here based on zero daemon_max[0] for other proto
+		   messages like this one from the same node */
+
+		return;
+	}
+
 	memcpy(&node->proto, p, sizeof(struct protocol));
+
+	/* if we have zero run values, and this msg has non-zero run values,
+	   then adopt them as ours; otherwise save this proto message */
+
+	if (our_protocol.daemon_run[0])
+		return;
+
+	if (p->daemon_run[0]) {
+		our_protocol.daemon_run[0] = p->daemon_run[0];
+		our_protocol.daemon_run[1] = p->daemon_run[1];
+		our_protocol.daemon_run[2] = p->daemon_run[2];
+
+		our_protocol.kernel_run[0] = p->kernel_run[0];
+		our_protocol.kernel_run[1] = p->kernel_run[1];
+		our_protocol.kernel_run[2] = p->kernel_run[2];
+
+		log_debug("run protocol from nodeid %d", hd->nodeid);
+	}
 }
 
 static void send_protocol(struct protocol *proto)
@@ -2305,6 +2429,17 @@ static void deliver_cb_daemon(cpg_handle_t handle,
 	}
 }
 
+static int in_daemon_member_list(int nodeid)
+{
+	int i;
+
+	for (i = 0; i < daemon_member_count; i++) {
+		if (daemon_member[i].nodeid == nodeid)
+			return 1;
+	}
+	return 0;
+}
+
 static void confchg_cb_daemon(cpg_handle_t handle,
 			      const struct cpg_name *group_name,
 			      const struct cpg_address *member_list,
@@ -2314,6 +2449,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			      const struct cpg_address *joined_list,
 			      size_t joined_list_entries)
 {
+	struct node_daemon *node;
 	int i;
 
 	log_config(group_name, member_list, member_list_entries,
@@ -2328,13 +2464,44 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 
 	for (i = 0; i < member_list_entries; i++) {
 		daemon_member[i] = member_list[i];
+		/* add struct for nodes we've not seen before */
 		add_node_daemon(member_list[i].nodeid);
+	}
+
+	list_for_each_entry(node, &daemon_nodes, list) {
+		if (in_daemon_member_list(node->nodeid)) {
+			if (node->daemon_member)
+				continue;
+
+			/* node joined daemon cpg */
+			node->daemon_member = 1;
+			node->daemon_add_time = time(NULL);
+		} else {
+			if (!node->daemon_member)
+				continue;
+
+			/* node left daemon cpg */
+			node->daemon_member = 0;
+			node->killed = 0;
+			memset(&node->proto, 0, sizeof(struct protocol));
+			node->daemon_rem_time = time(NULL);
+		}
 	}
 }
 
-static cpg_callbacks_t cpg_callbacks_daemon = {
+static void totem_cb_daemon(cpg_handle_t handle,
+                            struct cpg_ring_id ring_id,
+                            uint32_t member_list_entries,
+                            const uint32_t *member_list)
+{
+	log_ringid("dlm:controld", &ring_id, member_list, member_list_entries);
+}
+
+static cpg_model_v1_data_t cpg_callbacks_daemon = {
 	.cpg_deliver_fn = deliver_cb_daemon,
 	.cpg_confchg_fn = confchg_cb_daemon,
+	.cpg_totem_confchg_fn = totem_cb_daemon,
+	.flags = CPG_MODEL_V1_DELIVER_INITIAL_TOTEM_CONF,
 };
 
 void process_cpg_daemon(int ci)
@@ -2362,7 +2529,9 @@ int setup_cpg_daemon(void)
 	our_protocol.kernel_max[1] = 1;
 	our_protocol.kernel_max[2] = 1;
 
-	error = cpg_initialize(&cpg_handle_daemon, &cpg_callbacks_daemon);
+	error = cpg_model_initialize(&cpg_handle_daemon, CPG_MODEL_V1,
+				     (cpg_model_data_t *)&cpg_callbacks_daemon,
+				     NULL);
 	if (error != CPG_OK) {
 		log_error("daemon cpg_initialize error %d", error);
 		return -1;
@@ -2374,6 +2543,7 @@ int setup_cpg_daemon(void)
 	sprintf(name.value, "dlm:controld");
 	name.length = strlen(name.value) + 1;
 
+	log_debug("cpg_join %s ...", name.value);
  retry:
 	error = cpg_join(cpg_handle_daemon, &name);
 	if (error == CPG_ERR_TRY_AGAIN) {
@@ -2411,6 +2581,7 @@ void close_cpg_daemon(void)
 	sprintf(name.value, "dlm:controld");
 	name.length = strlen(name.value) + 1;
 
+	log_debug("cpg_leave %s ...", name.value);
  retry:
 	error = cpg_leave(cpg_handle_daemon, &name);
 	if (error == CPG_ERR_TRY_AGAIN) {
@@ -2509,13 +2680,15 @@ int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace)
 	lockspace->cg_next.seq = cg->seq;
 
 	if (cg->state == CGST_WAIT_CONDITIONS)
-		lockspace->cg_next.wait_condition = 4;
-	if (poll_fencing)
+		lockspace->cg_next.wait_condition = 5;
+	if (poll_ringid)
 		lockspace->cg_next.wait_condition = 1;
-	else if (poll_quorum)
+	else if (poll_fencing)
 		lockspace->cg_next.wait_condition = 2;
-	else if (poll_fs)
+	else if (poll_quorum)
 		lockspace->cg_next.wait_condition = 3;
+	else if (poll_fs)
+		lockspace->cg_next.wait_condition = 4;
 
 	if (cg->state == CGST_WAIT_MESSAGES)
 		lockspace->cg_next.wait_messages = 1;
@@ -2550,8 +2723,6 @@ static int _set_node_info(struct lockspace *ls, struct change *cg, int nodeid,
 
 	if (n->check_fencing)
 		node->flags |= DLMC_NF_CHECK_FENCING;
-	if (n->check_quorum)
-		node->flags |= DLMC_NF_CHECK_QUORUM;
 	if (n->check_fs)
 		node->flags |= DLMC_NF_CHECK_FS;
 

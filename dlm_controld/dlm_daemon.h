@@ -118,6 +118,7 @@
 EXTERN int daemon_debug_opt;
 EXTERN int daemon_quit;
 EXTERN int cluster_down;
+EXTERN int poll_ringid;
 EXTERN int poll_fencing;
 EXTERN int poll_quorum;
 EXTERN int poll_fs;
@@ -127,6 +128,7 @@ EXTERN int plock_fd;
 EXTERN int plock_ci;
 EXTERN struct list_head lockspaces;
 EXTERN int cluster_quorate;
+EXTERN uint64_t quorate_time;
 EXTERN uint32_t cluster_ringid_seq;
 EXTERN int our_nodeid;
 EXTERN uint32_t control_minor;
@@ -220,6 +222,7 @@ struct lockspace {
 	/* lockspace membership stuff */
 
 	cpg_handle_t		cpg_handle;
+	struct cpg_ring_id	cpg_ringid;
 	int			cpg_client;
 	int			cpg_fd;
 	int			joining;
@@ -242,7 +245,6 @@ struct lockspace {
 	struct list_head	saved_messages;
 	struct list_head	plock_resources;
 	struct rb_root		plock_resources_root;
-	time_t			last_checkpoint_time;
 	time_t			last_plock_time;
 	struct timeval		drop_resources_last;
 
