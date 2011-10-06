@@ -1,5 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
 #include "libdlm.h"
 
 static SaCkptHandleT global_ckpt_h;

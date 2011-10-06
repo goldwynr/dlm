@@ -1,5 +1,4 @@
 #include "dlm_daemon.h"
-#include "config.h"
 #include <linux/dlm.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>

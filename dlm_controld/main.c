@@ -1,3 +1,4 @@
+#define EXTERN
 #include "dlm_daemon.h"
 #include <pthread.h>
 #include <linux/netlink.h>
@@ -1234,6 +1235,20 @@ int main(int argc, char **argv)
 {
 	int fd;
 
+	cfgk_debug                  = -1;
+	cfgk_timewarn               = -1;
+	cfgk_protocol               = PROTO_DETECT;
+	cfgd_debug_logfile          = DEFAULT_DEBUG_LOGFILE;
+	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
+	cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;
+	cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
+	cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
+	cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;
+	cfgd_plock_ownership        = DEFAULT_PLOCK_OWNERSHIP;
+	cfgd_drop_resources_time    = DEFAULT_DROP_RESOURCES_TIME;
+	cfgd_drop_resources_count   = DEFAULT_DROP_RESOURCES_COUNT;
+	cfgd_drop_resources_age     = DEFAULT_DROP_RESOURCES_AGE;
+
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);
 
@@ -1263,57 +1278,4 @@ int main(int argc, char **argv)
 	unlink_lockfile(fd, RUNDIR, RUN_FILE_NAME);
 	return 0;
 }
-
-int daemon_debug_opt;
-int daemon_quit;
-int cluster_down;
-int poll_fencing;
-int poll_quorum;
-int poll_fs;
-int poll_ignore_plock;
-int poll_drop_plock;
-int plock_fd;
-int plock_ci;
-struct list_head lockspaces;
-int cluster_quorate;
-int our_nodeid;
-uint32_t cluster_ringid_seq;
-uint32_t control_minor;
-uint32_t monitor_minor;
-uint32_t plock_minor;
-uint32_t old_plock_minor;
-
-/* was a config value set on command line?, 0 or 1.
-   optk is a kernel option, optd is a daemon option */
-
-int optk_debug;
-int optk_timewarn;
-int optk_protocol;
-int optd_debug_logfile;
-int optd_enable_fencing;
-int optd_enable_quorum;
-int optd_enable_plock;
-int optd_plock_debug;
-int optd_plock_rate_limit;
-int optd_plock_ownership;
-int optd_drop_resources_time;
-int optd_drop_resources_count;
-int optd_drop_resources_age;
-
-/* actual config value from command line, cluster.conf, or default.
-   cfgk is a kernel config value, cfgd is a daemon config value */
-
-int cfgk_debug                  = -1;
-int cfgk_timewarn               = -1;
-int cfgk_protocol               = PROTO_DETECT;
-int cfgd_debug_logfile		= DEFAULT_DEBUG_LOGFILE;
-int cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
-int cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;
-int cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
-int cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
-int cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;
-int cfgd_plock_ownership        = DEFAULT_PLOCK_OWNERSHIP;
-int cfgd_drop_resources_time    = DEFAULT_DROP_RESOURCES_TIME;
-int cfgd_drop_resources_count   = DEFAULT_DROP_RESOURCES_COUNT;
-int cfgd_drop_resources_age     = DEFAULT_DROP_RESOURCES_AGE;
 

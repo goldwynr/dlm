@@ -38,10 +38,18 @@
 #include <linux/dlmconstants.h>
 #include "libdlmcontrol.h"
 #include "dlm_controld.h"
-#include "config.h"
 #include "list.h"
 #include "rbtree.h"
 #include "linux_endian.h"
+
+#ifndef EXTERN
+#define EXTERN extern
+#else
+#undef EXTERN
+#define EXTERN
+#endif
+
+#define DAEMON_NAME              "dlm_controld"
 
 /* TODO: get CONFDIR, LOGDIR, RUNDIR from build */
 
@@ -63,8 +71,16 @@
 #define DEFAULT_LOGFILE_PRIORITY LOG_INFO
 #define DEFAULT_LOGFILE          LOG_FILE_PATH
 
-#define DAEMON_NAME              "dlm_controld"
-
+#define DEFAULT_DEBUG_LOGFILE 0
+#define DEFAULT_ENABLE_FENCING 1
+#define DEFAULT_ENABLE_QUORUM 0
+#define DEFAULT_ENABLE_PLOCK 1
+#define DEFAULT_PLOCK_DEBUG 0
+#define DEFAULT_PLOCK_RATE_LIMIT 0
+#define DEFAULT_PLOCK_OWNERSHIP 0
+#define DEFAULT_DROP_RESOURCES_TIME 10000 /* 10 sec */
+#define DEFAULT_DROP_RESOURCES_COUNT 10
+#define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -91,24 +107,52 @@
 #define PROTO_SCTP 1
 #define PROTO_DETECT 2
 
-extern int daemon_debug_opt;
-extern int daemon_quit;
-extern int cluster_down;
-extern int poll_fencing;
-extern int poll_quorum;
-extern int poll_fs;
-extern int poll_ignore_plock;
-extern int poll_drop_plock;
-extern int plock_fd;
-extern int plock_ci;
-extern struct list_head lockspaces;
-extern int cluster_quorate;
-extern uint32_t cluster_ringid_seq;
-extern int our_nodeid;
-extern uint32_t control_minor;
-extern uint32_t monitor_minor;
-extern uint32_t plock_minor;
-extern uint32_t old_plock_minor;
+EXTERN int daemon_debug_opt;
+EXTERN int daemon_quit;
+EXTERN int cluster_down;
+EXTERN int poll_fencing;
+EXTERN int poll_quorum;
+EXTERN int poll_fs;
+EXTERN int poll_ignore_plock;
+EXTERN int poll_drop_plock;
+EXTERN int plock_fd;
+EXTERN int plock_ci;
+EXTERN struct list_head lockspaces;
+EXTERN int cluster_quorate;
+EXTERN uint32_t cluster_ringid_seq;
+EXTERN int our_nodeid;
+EXTERN uint32_t control_minor;
+EXTERN uint32_t monitor_minor;
+EXTERN uint32_t plock_minor;
+EXTERN uint32_t old_plock_minor;
+
+EXTERN int optk_debug;
+EXTERN int optk_timewarn;
+EXTERN int optk_protocol;
+EXTERN int optd_debug_logfile;
+EXTERN int optd_enable_fencing;
+EXTERN int optd_enable_quorum;
+EXTERN int optd_enable_plock;
+EXTERN int optd_plock_debug;
+EXTERN int optd_plock_rate_limit;
+EXTERN int optd_plock_ownership;
+EXTERN int optd_drop_resources_time;
+EXTERN int optd_drop_resources_count;
+EXTERN int optd_drop_resources_age;
+
+EXTERN int cfgk_debug;
+EXTERN int cfgk_timewarn;
+EXTERN int cfgk_protocol;
+EXTERN int cfgd_debug_logfile;
+EXTERN int cfgd_enable_fencing;
+EXTERN int cfgd_enable_quorum;
+EXTERN int cfgd_enable_plock;
+EXTERN int cfgd_plock_debug;
+EXTERN int cfgd_plock_rate_limit;
+EXTERN int cfgd_plock_ownership;
+EXTERN int cfgd_drop_resources_time;
+EXTERN int cfgd_drop_resources_count;
+EXTERN int cfgd_drop_resources_age;
 
 #define LOG_DUMP_SIZE DLMC_DUMP_SIZE
 
