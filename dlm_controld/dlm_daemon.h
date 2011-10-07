@@ -199,7 +199,6 @@ enum {
 #define DLM_MFLG_HAVEPLOCK 2  /* accompanies start, we have plock state */
 #define DLM_MFLG_NACK      4  /* accompanies start, prevent wrong match when
 				 two outstanding changes are the same */
-#define DLM_MFLG_PLOCK_SIG 8  /* msgdata2 is a plock signature */
 
 struct dlm_header {
 	uint16_t version[3];
@@ -294,8 +293,6 @@ int dlm_join_lockspace(struct lockspace *ls);
 int dlm_leave_lockspace(struct lockspace *ls);
 const char *msg_name(int type);
 void update_flow_control_status(void);
-void node_history_cluster_add(int nodeid);
-void node_history_cluster_rem(int nodeid);
 int set_node_info(struct lockspace *ls, int nodeid, struct dlmc_node *node);
 int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace);
 int set_lockspaces(int *count, struct dlmc_lockspace **lss_out);
@@ -338,6 +335,7 @@ int setup_cluster(void);
 void close_cluster(void);
 void process_cluster(int ci);
 void update_cluster(void);
+uint64_t cluster_add_time(int nodeid);
 int is_cluster_member(uint32_t nodeid);
 int setup_cluster_cfg(void);
 void close_cluster_cfg(void);

@@ -18,6 +18,68 @@ static uint32_t			old_nodes[MAX_NODES];
 static int			old_node_count;
 static uint32_t			quorum_nodes[MAX_NODES];
 static int			quorum_node_count;
+static struct list_head		cluster_nodes;
+
+struct node_cluster {
+	struct list_head list;
+	int nodeid;
+
+	uint64_t cluster_add_time;
+	uint64_t cluster_rem_time;
+};
+
+static struct node_cluster *get_cluster_node(int nodeid, int create)
+{
+	struct node_cluster *node;
+
+	list_for_each_entry(node, &cluster_nodes, list) {
+		if (node->nodeid == nodeid)
+			return node;
+	}
+
+	if (!create)
+		return NULL;
+
+	node = malloc(sizeof(struct node_cluster));
+	if (!node)
+		return NULL;
+
+	memset(node, 0, sizeof(struct node_cluster));
+	node->nodeid = nodeid;
+	list_add(&node->list, &cluster_nodes);
+	return node;
+}
+
+static void add_cluster_node(int nodeid, uint64_t now)
+{
+	struct node_cluster *node;
+
+	node = get_cluster_node(nodeid, 1);
+	if (!node)
+		return;
+	node->cluster_add_time = now;
+}
+
+static void rem_cluster_node(int nodeid, uint64_t now)
+{
+	struct node_cluster *node;
+
+	node = get_cluster_node(nodeid, 0);
+	if (!node)
+		return;
+	node->cluster_rem_time = now;
+}
+
+uint64_t cluster_add_time(int nodeid)
+{
+	struct node_cluster *node;
+
+	node = get_cluster_node(nodeid, 0);
+	if (!node)
+		return 0;
+
+	return node->cluster_add_time;
+}
 
 static int is_member(uint32_t *node_list, int count, uint32_t nodeid)
 {
@@ -48,9 +110,10 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	corosync_cfg_node_address_t *addrptr = addrs;
 	cs_error_t err;
 	int i, j, num_addrs;
+	uint64_t now = time(NULL);
 
 	if (!cluster_quorate && quorate)
-		quorate_time = time(NULL);
+		quorate_time = now;
 
 	cluster_quorate = quorate;
 	cluster_ringid_seq = (uint32_t)ring_seq;
@@ -71,7 +134,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 		if (!is_cluster_member(old_nodes[i])) {
 			log_debug("cluster node %u removed seq %u",
 				  old_nodes[i], cluster_ringid_seq);
-			node_history_cluster_rem(old_nodes[i]);
+			rem_cluster_node(old_nodes[i], now);
 			del_configfs_node(old_nodes[i]);
 		}
 	}
@@ -80,7 +143,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 		if (!is_old_member(quorum_nodes[i])) {
 			log_debug("cluster node %u added seq %u",
 				  quorum_nodes[i], cluster_ringid_seq);
-			node_history_cluster_add(quorum_nodes[i]);
+			add_cluster_node(quorum_nodes[i], now);
 
 			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
 							  MAX_NODE_ADDRESSES,
@@ -130,6 +193,8 @@ int setup_cluster(void)
 {
 	cs_error_t err;
 	int fd;
+
+	INIT_LIST_HEAD(&cluster_nodes);
 
 	err = quorum_initialize(&qh, &quorum_callbacks);
 	if (err != CS_OK) {

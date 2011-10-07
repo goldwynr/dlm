@@ -57,10 +57,6 @@ struct node {
 	struct list_head list;
 	int nodeid;
 
-	uint64_t cluster_add_time;
-	uint64_t cluster_rem_time;
-	int cluster_member;
-
 	uint64_t lockspace_add_time;
 	uint64_t lockspace_rem_time;
 	uint64_t lockspace_fail_time;
@@ -481,40 +477,8 @@ static struct node *get_node_history_create(struct lockspace *ls, int nodeid)
 	return node;
 }
 
-void node_history_cluster_add(int nodeid)
-{
-	struct lockspace *ls;
-	struct node *node;
-
-	list_for_each_entry(ls, &lockspaces, list) {
-		node = get_node_history_create(ls, nodeid);
-		if (!node) {
-			log_error("node_history_cluster_add no nodeid %d", nodeid);
-			return;
-		}
-		node->cluster_add_time = time(NULL);
-		node->cluster_member = 1;
-	}
-}
-
-void node_history_cluster_rem(int nodeid)
-{
-	struct lockspace *ls;
-	struct node *node;
-
-	list_for_each_entry(ls, &lockspaces, list) {
-		node = get_node_history(ls, nodeid);
-		if (!node) {
-			log_error("node_history_cluster_rem no nodeid %d", nodeid);
-			return;
-		}
-		node->cluster_rem_time = time(NULL);
-		node->cluster_member = 0;
-	}
-}
-
 static void node_history_lockspace_add(struct lockspace *ls, int nodeid,
-				       struct change *cg)
+				       struct change *cg, uint64_t now)
 {
 	struct node *node;
 
@@ -524,13 +488,13 @@ static void node_history_lockspace_add(struct lockspace *ls, int nodeid,
 		return;
 	}
 
-	node->lockspace_add_time = time(NULL);
+	node->lockspace_add_time = now;
 	node->lockspace_add_seq = cg->seq;
 	node->lockspace_member = 1;
 }
 
 static void node_history_lockspace_left(struct lockspace *ls, int nodeid,
-					struct change *cg)
+					struct change *cg, uint64_t now)
 {
 	struct node *node;
 
@@ -542,13 +506,14 @@ static void node_history_lockspace_left(struct lockspace *ls, int nodeid,
 
 	node->start_time = 0;
 
-	node->lockspace_rem_time = time(NULL);
+	node->lockspace_rem_time = now;
 	node->lockspace_rem_seq = cg->seq;	/* for queries */
 	node->lockspace_member = 0;
 }
 
 static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
-					struct change *cg, int reason)
+					struct change *cg, int reason,
+					uint64_t now)
 {
 	struct node *node;
 
@@ -569,10 +534,10 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 		node->check_fs = 1;
 	}
 
-	node->lockspace_rem_time = time(NULL);
+	node->lockspace_rem_time = now;
 	node->lockspace_rem_seq = cg->seq;	/* for queries */
 	node->lockspace_member = 0;
-	node->lockspace_fail_time = node->lockspace_rem_time;
+	node->lockspace_fail_time = now;
 	node->lockspace_fail_seq = node->lockspace_rem_seq;
 	node->lockspace_fail_reason = reason;	/* for queries */
 }
@@ -596,13 +561,13 @@ static void node_history_start(struct lockspace *ls, int nodeid)
 static int check_ringid_done(struct lockspace *ls)
 {
 	if (cluster_ringid_seq != (uint32_t)ls->cpg_ringid.seq) {
-		log_debug("check_ringid cluster %u cpg %u:%llu",
+		log_group(ls, "check_ringid cluster %u cpg %u:%llu",
 			  cluster_ringid_seq, ls->cpg_ringid.nodeid,
 			  (unsigned long long)ls->cpg_ringid.seq);
 		return 0;
 	}
 
-	log_debug("check_ringid done cluster %u cpg %u:%llu",
+	log_group(ls, "check_ringid done cluster %u cpg %u:%llu",
 		  cluster_ringid_seq, ls->cpg_ringid.nodeid,
 		  (unsigned long long)ls->cpg_ringid.seq);
         return 1;
@@ -967,6 +932,7 @@ static int match_change(struct lockspace *ls, struct change *cg,
 	struct id_info *id;
 	struct member *memb;
 	struct node *node;
+	uint64_t t;
 	uint32_t seq = hd->msgdata;
 	int i, members_mismatch;
 
@@ -1012,11 +978,12 @@ static int match_change(struct lockspace *ls, struct change *cg,
 		return 0;
 	}
 
-	if (node->cluster_add_time > cg->create_time) {
+	t = cluster_add_time(node->nodeid);
+	if (t > cg->create_time) {
 		log_group(ls, "match_change %d:%u skip cg %u created %llu "
 			  "cluster add %llu", hd->nodeid, seq, cg->seq,
 			  (unsigned long long)cg->create_time,
-			  (unsigned long long)node->cluster_add_time);
+			  (unsigned long long)t);
 		return 0;
 	}
 
@@ -1448,6 +1415,7 @@ static int add_change(struct lockspace *ls,
 	struct change *cg;
 	struct member *memb;
 	int i, error;
+	uint64_t now = time(NULL);
 
 	cg = malloc(sizeof(struct change));
 	if (!cg)
@@ -1456,7 +1424,7 @@ static int add_change(struct lockspace *ls,
 	INIT_LIST_HEAD(&cg->members);
 	INIT_LIST_HEAD(&cg->removed);
 	cg->state = CGST_WAIT_CONDITIONS;
-	cg->create_time = time(NULL);
+	cg->create_time = now;
 	cg->seq = ++ls->change_seq;
 	if (!cg->seq)
 		cg->seq = ++ls->change_seq;
@@ -1489,9 +1457,9 @@ static int add_change(struct lockspace *ls,
 
 		if (memb->failed) {
 			node_history_lockspace_fail(ls, memb->nodeid, cg,
-						    left_list[i].reason);
+						    left_list[i].reason, now);
 		} else {
-			node_history_lockspace_left(ls, memb->nodeid, cg);
+			node_history_lockspace_left(ls, memb->nodeid, cg, now);
 		}
 
 		log_group(ls, "add_change cg %u remove nodeid %d reason %d",
@@ -1513,7 +1481,7 @@ static int add_change(struct lockspace *ls,
 		if (memb->nodeid == our_nodeid) {
 			cg->we_joined = 1;
 		} else {
-			node_history_lockspace_add(ls, memb->nodeid, cg);
+			node_history_lockspace_add(ls, memb->nodeid, cg, now);
 		}
 
 		log_group(ls, "add_change cg %u joined nodeid %d", cg->seq,
@@ -1523,7 +1491,7 @@ static int add_change(struct lockspace *ls,
 	if (cg->we_joined) {
 		log_group(ls, "add_change cg %u we joined", cg->seq);
 		list_for_each_entry(memb, &cg->members, list) {
-			node_history_lockspace_add(ls, memb->nodeid, cg);
+			node_history_lockspace_add(ls, memb->nodeid, cg, now);
 		}
 	}
 
@@ -2005,12 +1973,12 @@ static void add_node_daemon(int nodeid)
 	if (get_node_daemon(nodeid))
 		return;
 
-	node = malloc(sizeof(struct node));
+	node = malloc(sizeof(struct node_daemon));
 	if (!node) {
 		log_error("add_node_daemon no mem");
 		return;
 	}
-	memset(node, 0, sizeof(struct node));
+	memset(node, 0, sizeof(struct node_daemon));
 	node->nodeid = nodeid;
 	list_add_tail(&node->list, &daemon_nodes);
 }
@@ -2450,6 +2418,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			      size_t joined_list_entries)
 {
 	struct node_daemon *node;
+	uint64_t now = time(NULL);
 	int i;
 
 	log_config(group_name, member_list, member_list_entries,
@@ -2475,7 +2444,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 
 			/* node joined daemon cpg */
 			node->daemon_member = 1;
-			node->daemon_add_time = time(NULL);
+			node->daemon_add_time = now;
 		} else {
 			if (!node->daemon_member)
 				continue;
@@ -2484,7 +2453,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->daemon_member = 0;
 			node->killed = 0;
 			memset(&node->proto, 0, sizeof(struct protocol));
-			node->daemon_rem_time = time(NULL);
+			node->daemon_rem_time = now;
 		}
 	}
 }
