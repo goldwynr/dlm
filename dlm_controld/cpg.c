@@ -72,7 +72,8 @@ struct node {
 	int fs_notified;
 
 	int check_fencing;
-	uint64_t fence_time;	/* for debug */
+	uint64_t fail_realtime;
+	uint64_t fence_realtime;
 	uint32_t fence_queries;	/* for debug */
 };
 
@@ -525,7 +526,7 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 
 	if (cfgd_enable_fencing && node->start_time) {
 		node->check_fencing = 1;
-		node->fence_time = 0;
+		node->fence_realtime = 0;
 		node->fence_queries = 0;
 	}
 
@@ -540,6 +541,7 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 	node->lockspace_fail_time = now;
 	node->lockspace_fail_seq = node->lockspace_rem_seq;
 	node->lockspace_fail_reason = reason;	/* for queries */
+	node->fail_realtime = time(NULL);
 }
 
 static void node_history_start(struct lockspace *ls, int nodeid)
@@ -552,7 +554,7 @@ static void node_history_start(struct lockspace *ls, int nodeid)
 		return;
 	}
 
-	node->start_time = time(NULL);
+	node->start_time = monotime();
 }
 
 /* wait for cluster ringid and cpg ringid to be the same so we know our
@@ -596,31 +598,33 @@ static int check_fencing_done(struct lockspace *ls)
 		if (rv < 0)
 			log_error("fenced_node_info error %d", rv);
 
+		/* fenced gives us real time */
+
 		/* need >= not just > because in at least one case
 		   we've seen fenced_time within the same second as
 		   fail_time: with external fencing, e.g. fence_node */
 
-		if (last_fenced_time >= node->lockspace_fail_time) {
+		if (last_fenced_time >= node->fail_realtime) {
 			log_group(ls, "check_fencing %d done "
 				  "start %llu fail %llu last %llu",
 				  node->nodeid,
 				  (unsigned long long)node->start_time,
-				  (unsigned long long)node->lockspace_fail_time,
+				  (unsigned long long)node->fail_realtime,
 				  (unsigned long long)last_fenced_time);
 			node->check_fencing = 0;
 			node->start_time = 0;
-			node->fence_time = last_fenced_time;
+			node->fence_realtime = last_fenced_time;
 		} else {
 			if (!node->fence_queries ||
-			    node->fence_time != last_fenced_time) {
+			    node->fence_realtime != last_fenced_time) {
 				log_group(ls, "check_fencing %d wait "
 					  "start %llu fail %llu last %llu",
 					  node->nodeid,
 					 (unsigned long long)node->start_time,
-					 (unsigned long long)node->lockspace_fail_time,
+					 (unsigned long long)node->fail_realtime,
 					 (unsigned long long)last_fenced_time);
 				node->fence_queries++;
-				node->fence_time = last_fenced_time;
+				node->fence_realtime = last_fenced_time;
 			}
 			wait_count++;
 		}
@@ -1415,7 +1419,7 @@ static int add_change(struct lockspace *ls,
 	struct change *cg;
 	struct member *memb;
 	int i, error;
-	uint64_t now = time(NULL);
+	uint64_t now = monotime();
 
 	cg = malloc(sizeof(struct change));
 	if (!cg)
@@ -2418,7 +2422,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			      size_t joined_list_entries)
 {
 	struct node_daemon *node;
-	uint64_t now = time(NULL);
+	uint64_t now = monotime();
 	int i;
 
 	log_config(group_name, member_list, member_list_entries,

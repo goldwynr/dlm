@@ -110,7 +110,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	corosync_cfg_node_address_t *addrptr = addrs;
 	cs_error_t err;
 	int i, j, num_addrs;
-	uint64_t now = time(NULL);
+	uint64_t now = monotime();
 
 	if (!cluster_quorate && quorate)
 		quorate_time = now;

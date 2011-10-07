@@ -813,11 +813,11 @@ static void __receive_plock(struct lockspace *ls, struct dlm_plock_info *in,
 {
 	switch (in->optype) {
 	case DLM_PLOCK_OP_LOCK:
-		ls->last_plock_time = time(NULL);
+		ls->last_plock_time = monotime();
 		do_lock(ls, in, r);
 		break;
 	case DLM_PLOCK_OP_UNLOCK:
-		ls->last_plock_time = time(NULL);
+		ls->last_plock_time = monotime();
 		do_unlock(ls, in, r);
 		break;
 	case DLM_PLOCK_OP_GET:
@@ -1132,7 +1132,7 @@ static void _receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	int from = hd->nodeid;
 	int rv;
 
-	ls->last_plock_time = time(NULL);
+	ls->last_plock_time = monotime();
 
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
@@ -1305,7 +1305,7 @@ static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
 	int from = hd->nodeid;
 	int rv;
 
-	ls->last_plock_time = time(NULL);
+	ls->last_plock_time = monotime();
 
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
@@ -1352,7 +1352,7 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 	int from = hd->nodeid;
 	int rv;
 
-	ls->last_plock_time = time(NULL);
+	ls->last_plock_time = monotime();
 
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
@@ -2072,7 +2072,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 	}
 	
 	if (purged)
-		ls->last_plock_time = time(NULL);
+		ls->last_plock_time = monotime();
 
 	log_dlock(ls, "purged %d plocks for %d", purged, nodeid);
 }
