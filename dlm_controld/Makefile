@@ -25,6 +25,7 @@ LIB_TARGET = $(LIB_SO).$(LIB_MAJOR).$(LIB_MINOR)
 BIN_SOURCE = action.c \
              cpg.c \
              crc.c \
+             fence.c \
              main.c \
              plock.c \
              config.c \

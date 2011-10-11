@@ -10,7 +10,6 @@
 #include <corosync/corotypes.h>
 #include <corosync/cfg.h>
 #include <corosync/quorum.h>
-#include "libfenced.h"
 
 static corosync_cfg_handle_t	ch;
 static quorum_handle_t		qh;
@@ -308,35 +307,5 @@ int setup_cluster_cfg(void)
 void close_cluster_cfg(void)
 {
 	corosync_cfg_finalize(ch);
-}
-
-int fence_node_time(int nodeid, uint64_t *last_fenced_time)
-{
-	struct fenced_node nodeinfo;
-	int rv;
-
-	memset(&nodeinfo, 0, sizeof(nodeinfo));
-
-	rv = fenced_node_info(nodeid, &nodeinfo);
-	if (rv < 0)
-		return rv;
-
-	*last_fenced_time = nodeinfo.last_fenced_time;
-	return 0;
-}
-
-int fence_in_progress(int *count)
-{
-	struct fenced_domain domain;
-	int rv;
-
-	memset(&domain, 0, sizeof(domain));
-
-	rv = fenced_domain_info(&domain);
-	if (rv < 0)
-		return rv;
-
-	*count = domain.victim_count;
-	return 0;
 }
 
