@@ -71,6 +71,7 @@ struct node {
 	int check_fs;
 	int fs_notified;
 
+	int request_fencing;
 	int check_fencing;
 	uint64_t fail_realtime;
 	uint64_t fence_realtime;
@@ -525,6 +526,7 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 	}
 
 	if (cfgd_enable_fencing && node->start_time) {
+		node->request_fencing = 1;
 		node->check_fencing = 1;
 		node->fence_realtime = 0;
 		node->fence_queries = 0;
@@ -650,6 +652,34 @@ static int check_fencing_done(struct lockspace *ls)
 	return 1;
 }
 
+static int need_fencing(struct lockspace *ls)
+{
+	struct node *node;
+
+	list_for_each_entry(node, &ls->node_history, list) {
+		if (node->check_fencing)
+			return 1;
+	}
+	return 0;
+}
+
+static void request_fencing(struct lockspace *ls)
+{
+	struct node *node;
+
+	list_for_each_entry(node, &ls->node_history, list) {
+		if (!node->request_fencing)
+			continue;
+
+		/* we don't need to ask fenced to initiate fencing; it does
+		   so itself when it sees a fence domain member fail.  Without
+		   fenced we'll probably need to ask another daemon to initiate
+		   fencing, then check with it above, like we check libfenced. */
+
+		node->request_fencing = 0;
+	}
+}
+
 /* we know that the quorum value here is consistent with the cpg events
    because the ringid's are in sync per the previous check_ringid_done */
 
@@ -661,11 +691,11 @@ static int check_quorum_done(struct lockspace *ls)
 	}
 
 	if (!cluster_quorate) {
-		log_debug("check_quorum not quorate");
+		log_group(ls, "check_quorum not quorate");
 		return 0;
 	}
 
-	log_debug("check_quorum done");
+	log_group(ls, "check_quorum done");
 	return 1;
 }
 
@@ -791,34 +821,28 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
    don't need to check for because stop_kernel(), which is synchronous,
    was done when the change was created */
 
+/* the fencing/quorum/fs conditions need to account for all the changes
+   that have occured since the last change applied to dlm-kernel, not
+   just the latest change */
+
 static int wait_conditions_done(struct lockspace *ls)
 {
-	if (!check_ringid_done(ls)) {
-		poll_ringid++;
+	if (!check_ringid_done(ls))
 		return 0;
-	}
 
-	/* the fencing/quorum/fs conditions need to account for all the changes
-	   that have occured since the last change applied to dlm-kernel, not
-	   just the latest change */
+	/* It's convenient to be able to join and leave lockspaces without
+	   having quorum.  If the fencing system does not wait for quorum
+	   before carrying out fencing requests, then we may want to wait for
+	   quorum here before requesting fencing, to avoid having partitioned
+	   nodes fence good nodes. */
+
+	if (need_fencing(ls) && !check_quorum_done(ls))
+		return 0;
+
+	request_fencing(ls);
 
 	if (!check_fencing_done(ls)) {
 		poll_fencing++;
-		return 0;
-	}
-
-	/* fencing waits for quorum, so we don't need to check quorum for any
-	   reasons related to safety or protection, so enable_quorum defaults
-	   to 0.  This does mean that lockspaces (and cluster fs's) can be
-	   started/enabled in an inquorate cluster if there are no outstanding
-	   fencing operations.  Some users or apps may want lockspaces/fs's to
-	   only be enabled in a quorate cluster; enable_quorum can be set to 1
-	   to get that behavior.  The main advantage of not waiting for quorum
-	   here is to allow lockspaces to be shut down (and cluster fs's
-	   unmounted) in an inquorate cluster. */
-
-	if (!check_quorum_done(ls)) {
-		poll_quorum++;
 		return 0;
 	}
 
@@ -1903,7 +1927,7 @@ int dlm_join_lockspace(struct lockspace *ls)
 	/* TODO: allow global_id to be set in cluster.conf? */
 	ls->global_id = cpgname_to_crc(name.value, name.length);
 
-	log_debug("cpg_join %s ...", name.value);
+	log_group(ls, "cpg_join %s ...", name.value);
  retry:
 	error = cpg_join(h, &name);
 	if (error == CPG_ERR_TRY_AGAIN) {

@@ -969,7 +969,7 @@ static void loop(void)
 
 		poll_timeout = -1;
 
-		if (poll_fencing || poll_quorum || poll_fs) {
+		if (poll_fencing || poll_fs) {
 			process_lockspace_changes();
 			poll_timeout = 1000;
 		}
