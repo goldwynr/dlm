@@ -29,7 +29,7 @@ BIN_SOURCE = action.c \
              main.c \
              plock.c \
              config.c \
-             member_cman.c \
+             member.c \
              logging.c \
              rbtree.c
 LIB_SOURCE = lib.c

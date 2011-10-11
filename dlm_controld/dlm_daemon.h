@@ -330,7 +330,7 @@ struct lockspace *find_ls_id(uint32_t id);
 const char *dlm_mode_str(int mode);
 void cluster_dead(int ci);
 
-/* member_cman.c */
+/* member.c */
 int setup_cluster(void);
 void close_cluster(void);
 void process_cluster(int ci);
