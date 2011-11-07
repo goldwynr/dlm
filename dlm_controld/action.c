@@ -62,12 +62,64 @@ static int detect_protocol(void)
 	}
 
 	key_value[value_len] = '\0';
-	log_debug("totem/rrp_mode = '%s'", key_value);
+	log_debug("confdb totem.rrp_mode = '%s'", key_value);
 
 	if (!strcmp(key_value, "none"))
 		proto = PROTO_TCP;
 	else
 		proto = PROTO_SCTP;
+ out:
+	confdb_finalize(handle);
+	return proto;
+}
+
+/* TODO: getting cluster_name will almost certainly change to either
+   a corosync lib api, or some confdb path other than cluster.name */
+
+static int detect_cluster_name(void)
+{
+	confdb_handle_t handle;
+	hdb_handle_t totem_handle;
+	char key_value[256];
+	size_t value_len;
+	int rv, proto = -1;
+	confdb_callbacks_t callbacks = {
+		.confdb_key_change_notify_fn = NULL,
+		.confdb_object_create_change_notify_fn = NULL,
+		.confdb_object_delete_change_notify_fn = NULL
+	};
+
+	rv = confdb_initialize(&handle, &callbacks);
+	if (rv != CS_OK) {
+		log_error("confdb_initialize error %d", rv);
+		return -1; 
+	}
+
+	rv = confdb_object_find_start(handle, OBJECT_PARENT_HANDLE);
+	if (rv != CS_OK) {
+		log_error("confdb_object_find_start error %d", rv);
+		goto out;
+	}
+
+	rv = confdb_object_find(handle, OBJECT_PARENT_HANDLE,
+				"cluster", strlen("cluster"), &totem_handle);
+	if (rv != CS_OK) {
+		log_error("confdb_object_find error %d", rv);
+		goto out;
+	}
+
+	rv = confdb_key_get(handle, totem_handle,
+			    "name", strlen("name"),
+			    key_value, &value_len);
+	if (rv != CS_OK) {
+		log_error("confdb_key_get error %d", rv);
+		goto out;
+	}
+
+	key_value[value_len] = '\0';
+	log_debug("confdb cluster.name = '%s'", key_value);
+
+	strncpy(cluster_name, key_value, DLM_LOCKSPACE_LEN);
  out:
 	confdb_finalize(handle);
 	return proto;
@@ -660,14 +712,17 @@ void del_configfs_node(int nodeid)
 		log_error("%s: rmdir failed: %d", path, errno);
 }
 
-static int set_configfs_protocol(int proto)
+/* num may be 0, str won't be NULL */
+
+static int set_configfs_cluster(const char *name, char *str, int num)
 {
 	char path[PATH_MAX];
 	char buf[32];
+	char *wbuf;
 	int fd, rv;
 
 	memset(path, 0, PATH_MAX);
-	snprintf(path, PATH_MAX, "%s/protocol", CLUSTER_DIR);
+	snprintf(path, PATH_MAX, "%s/%s", CLUSTER_DIR, name);
 
 	fd = open(path, O_WRONLY);
 	if (fd < 0) {
@@ -675,72 +730,21 @@ static int set_configfs_protocol(int proto)
 		return fd;
 	}
 
-	memset(buf, 0, sizeof(buf));
-	snprintf(buf, 32, "%d", proto);
+	if (str) {
+		wbuf = str;
+	} else {
+		memset(buf, 0, sizeof(buf));
+		snprintf(buf, 32, "%d", num);
+		wbuf = buf;
+	}
 
-	rv = do_write(fd, buf, strlen(buf));
+	rv = do_write(fd, wbuf, strlen(wbuf));
 	if (rv < 0) {
 		log_error("%s: write failed: %d", path, errno);
 		return rv;
 	}
 	close(fd);
-	log_debug("set protocol %d", proto);
-	return 0;
-}
-
-static int set_configfs_timewarn(int cs)
-{
-	char path[PATH_MAX];
-	char buf[32];
-	int fd, rv;
-
-	memset(path, 0, PATH_MAX);
-	snprintf(path, PATH_MAX, "%s/timewarn_cs", CLUSTER_DIR);
-
-	fd = open(path, O_WRONLY);
-	if (fd < 0) {
-		log_error("%s: open failed: %d", path, errno);
-		return fd;
-	}
-
-	memset(buf, 0, sizeof(buf));
-	snprintf(buf, 32, "%d", cs);
-
-	rv = do_write(fd, buf, strlen(buf));
-	if (rv < 0) {
-		log_error("%s: write failed: %d", path, errno);
-		return rv;
-	}
-	close(fd);
-	log_debug("set timewarn_cs %d", cs);
-	return 0;
-}
-
-static int set_configfs_debug(int val)
-{
-	char path[PATH_MAX];
-	char buf[32];
-	int fd, rv;
-
-	memset(path, 0, PATH_MAX);
-	snprintf(path, PATH_MAX, "%s/log_debug", CLUSTER_DIR);
-
-	fd = open(path, O_WRONLY);
-	if (fd < 0) {
-		log_error("%s: open failed: %d", path, errno);
-		return fd;
-	}
-
-	memset(buf, 0, sizeof(buf));
-	snprintf(buf, 32, "%d", val);
-
-	rv = do_write(fd, buf, strlen(buf));
-	if (rv < 0) {
-		log_error("%s: write failed: %d", path, errno);
-		return rv;
-	}
-	close(fd);
-	log_debug("set log_debug %d", val);
+	log_debug("set %s %s", name, wbuf);
 	return 0;
 }
 
@@ -836,7 +840,7 @@ void clear_configfs(void)
 	rmdir("/sys/kernel/config/dlm/cluster");
 }
 
-int setup_configfs(void)
+int setup_configfs_options(void)
 {
 	int rv;
 
@@ -846,17 +850,14 @@ int setup_configfs(void)
 	if (rv < 0)
 		return rv;
 
-	/* add configfs entries for existing nodes */
-	update_cluster();
-
 	/* the kernel has its own defaults for these values which we
 	   don't want to change unless these have been set; -1 means
 	   they have not been set on command line or config file */
 
 	if (cfgk_debug != -1)
-		set_configfs_debug(cfgk_debug);
+		set_configfs_cluster("log_debug", NULL, cfgk_debug);
 	if (cfgk_timewarn != -1)
-		set_configfs_timewarn(cfgk_timewarn);
+		set_configfs_cluster("timewarn_cs", NULL, cfgk_timewarn);
 
 	if (cfgk_protocol == PROTO_DETECT) {
 		rv = detect_protocol();
@@ -865,11 +866,44 @@ int setup_configfs(void)
 	}
 
 	if (cfgk_protocol == PROTO_TCP || cfgk_protocol == PROTO_SCTP)
-		set_configfs_protocol(cfgk_protocol);
+		set_configfs_cluster("protocol", NULL, cfgk_protocol);
 
 	if (cfgk_protocol == PROTO_SCTP)
 		set_proc_rmem();
 
+	/* 
+	 * set clustername, recover_callbacks
+	 *
+	 * we can't set our nodeid here, though, it must be set *after*
+	 * setup_monitor, because the kernel assumes if the nodeid
+	 * is set, but monitor is not opened, that it's an old,
+	 * pre-monitor version of dlm_controld and allows it to
+	 * go ahead without the monitor being open
+	 */
+
+	if (cfgd_enable_fscontrol) {
+		/* deprecated */
+		set_configfs_cluster("recover_callbacks", NULL, 0);
+	} else {
+		set_configfs_cluster("recover_callbacks", NULL, 1);
+
+		detect_cluster_name();
+
+		if (cluster_name[0])
+			set_configfs_cluster("cluster_name", cluster_name, 0);
+		else
+			log_error("no cluster name");
+	}
+	return 0;
+}
+
+/* see comment above re why setup_monitor needs to come between
+   setup_configfs_options and setup_configfs_members */
+
+int setup_configfs_members(void)
+{
+	/* add configfs entries for existing nodes */
+	update_cluster();
 	return 0;
 }
 

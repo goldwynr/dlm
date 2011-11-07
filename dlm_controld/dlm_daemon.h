@@ -82,6 +82,7 @@
 #define DEFAULT_DEBUG_LOGFILE 0
 #define DEFAULT_ENABLE_FENCING 1
 #define DEFAULT_ENABLE_QUORUM 1
+#define DEFAULT_ENABLE_FSCONTROL 0
 #define DEFAULT_ENABLE_PLOCK 1
 #define DEFAULT_PLOCK_DEBUG 0
 #define DEFAULT_PLOCK_RATE_LIMIT 0
@@ -130,6 +131,7 @@ EXTERN struct list_head lockspaces;
 EXTERN int cluster_quorate;
 EXTERN uint64_t quorate_time;
 EXTERN uint32_t cluster_ringid_seq;
+EXTERN char cluster_name[DLM_LOCKSPACE_LEN+1];
 EXTERN int our_nodeid;
 EXTERN uint32_t control_minor;
 EXTERN uint32_t monitor_minor;
@@ -141,6 +143,7 @@ EXTERN int optk_protocol;
 EXTERN int optd_debug_logfile;
 EXTERN int optd_enable_fencing;
 EXTERN int optd_enable_quorum;
+EXTERN int optd_enable_fscontrol;
 EXTERN int optd_enable_plock;
 EXTERN int optd_plock_debug;
 EXTERN int optd_plock_rate_limit;
@@ -155,6 +158,7 @@ EXTERN int cfgk_protocol;
 EXTERN int cfgd_debug_logfile;
 EXTERN int cfgd_enable_fencing;
 EXTERN int cfgd_enable_quorum;
+EXTERN int cfgd_enable_fscontrol;
 EXTERN int cfgd_enable_plock;
 EXTERN int cfgd_plock_debug;
 EXTERN int cfgd_plock_rate_limit;
@@ -273,7 +277,8 @@ int set_configfs_members(char *name, int new_count, int *new_members,
 int add_configfs_node(int nodeid, char *addr, int addrlen, int local);
 void del_configfs_node(int nodeid);
 void clear_configfs(void);
-int setup_configfs(void);
+int setup_configfs_options(void);
+int setup_configfs_members(void);
 int check_uncontrolled_lockspaces(void);
 int setup_misc_devices(void);
 int path_exists(const char *path);
