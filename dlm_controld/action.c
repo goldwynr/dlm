@@ -9,7 +9,7 @@
 #include "dlm_daemon.h"
 
 #include <corosync/corotypes.h>
-#include <corosync/confdb.h>
+#include <corosync/cmap.h>
 
 static int dir_members[MAX_NODES];
 static int dir_members_count;
@@ -23,106 +23,65 @@ static int comms_nodes_count;
 
 static int detect_protocol(void)
 {
-	confdb_handle_t handle;
-	hdb_handle_t totem_handle;
-	char key_value[256];
-	size_t value_len;
+	cmap_handle_t handle;
+	char *str = NULL;
 	int rv, proto = -1;
-	confdb_callbacks_t callbacks = {
-		.confdb_key_change_notify_fn = NULL,
-		.confdb_object_create_change_notify_fn = NULL,
-		.confdb_object_delete_change_notify_fn = NULL
-	};
 
-	rv = confdb_initialize(&handle, &callbacks);
+	rv = cmap_initialize(&handle);
 	if (rv != CS_OK) {
-		log_error("confdb_initialize error %d", rv);
+		log_error("cmap_initialize error %d", rv);
 		return -1; 
 	}
 
-	rv = confdb_object_find_start(handle, OBJECT_PARENT_HANDLE);
+	rv = cmap_get_string(handle, "totem.rrp_mode", &str);
 	if (rv != CS_OK) {
-		log_error("confdb_object_find_start error %d", rv);
+		log_error("cmap_get_string error %d", rv);
 		goto out;
 	}
 
-	rv = confdb_object_find(handle, OBJECT_PARENT_HANDLE,
-				"totem", strlen("totem"), &totem_handle);
-	if (rv != CS_OK) {
-		log_error("confdb_object_find error %d", rv);
-		goto out;
-	}
+	log_debug("cmap totem.rrp_mode = '%s'", str);
 
-	rv = confdb_key_get(handle, totem_handle,
-			    "rrp_mode", strlen("rrp_mode"),
-			    key_value, &value_len);
-	if (rv != CS_OK) {
-		log_error("confdb_key_get error %d", rv);
-		goto out;
-	}
-
-	key_value[value_len] = '\0';
-	log_debug("confdb totem.rrp_mode = '%s'", key_value);
-
-	if (!strcmp(key_value, "none"))
+	if (!strcmp(str, "none"))
 		proto = PROTO_TCP;
 	else
 		proto = PROTO_SCTP;
  out:
-	confdb_finalize(handle);
+	if (str)
+		free(str);
+	cmap_finalize(handle);
 	return proto;
 }
 
 /* TODO: getting cluster_name will almost certainly change to either
-   a corosync lib api, or some confdb path other than cluster.name */
+   a corosync lib api, or some cmap path other than cluster.name */
 
 static int detect_cluster_name(void)
 {
-	confdb_handle_t handle;
-	hdb_handle_t totem_handle;
-	char key_value[256];
-	size_t value_len;
-	int rv, proto = -1;
-	confdb_callbacks_t callbacks = {
-		.confdb_key_change_notify_fn = NULL,
-		.confdb_object_create_change_notify_fn = NULL,
-		.confdb_object_delete_change_notify_fn = NULL
-	};
+	cmap_handle_t handle;
+	char *str = NULL;
+	int rv, err = -1;
 
-	rv = confdb_initialize(&handle, &callbacks);
+	rv = cmap_initialize(&handle);
 	if (rv != CS_OK) {
-		log_error("confdb_initialize error %d", rv);
+		log_error("cmap_initialize error %d", rv);
 		return -1; 
 	}
 
-	rv = confdb_object_find_start(handle, OBJECT_PARENT_HANDLE);
+	rv = cmap_get_string(handle, "cluster.name", &str);
 	if (rv != CS_OK) {
-		log_error("confdb_object_find_start error %d", rv);
+		log_error("cmap_get_string error %d", rv);
 		goto out;
-	}
+	} else
+		err = 0;
 
-	rv = confdb_object_find(handle, OBJECT_PARENT_HANDLE,
-				"cluster", strlen("cluster"), &totem_handle);
-	if (rv != CS_OK) {
-		log_error("confdb_object_find error %d", rv);
-		goto out;
-	}
+	log_debug("cmap cluster.name = '%s'", str);
 
-	rv = confdb_key_get(handle, totem_handle,
-			    "name", strlen("name"),
-			    key_value, &value_len);
-	if (rv != CS_OK) {
-		log_error("confdb_key_get error %d", rv);
-		goto out;
-	}
-
-	key_value[value_len] = '\0';
-	log_debug("confdb cluster.name = '%s'", key_value);
-
-	strncpy(cluster_name, key_value, DLM_LOCKSPACE_LEN);
+	strncpy(cluster_name, str, DLM_LOCKSPACE_LEN);
  out:
-	confdb_finalize(handle);
-	return proto;
+	if (str)
+		free(str);
+	cmap_finalize(handle);
+	return err;
 }
 
 /* This is for the case where dlm_controld exits/fails, abandoning dlm
