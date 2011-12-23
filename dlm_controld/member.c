@@ -192,13 +192,19 @@ int setup_cluster(void)
 {
 	cs_error_t err;
 	int fd;
+	uint32_t quorum_type;
 
 	INIT_LIST_HEAD(&cluster_nodes);
 
-	err = quorum_initialize(&qh, &quorum_callbacks);
+	err = quorum_initialize(&qh, &quorum_callbacks, &quorum_type);
 	if (err != CS_OK) {
 		log_error("quorum init error %d", err);
 		return -1;
+	}
+
+	if (quorum_type == QUORUM_FREE) {
+		log_error("no quorum provider configured in corosync, unable to operate");
+		goto fail;
 	}
 
 	err = quorum_fd_get(qh, &fd);
