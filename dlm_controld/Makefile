@@ -62,7 +62,8 @@ BIN_CFLAGS += -I../include -I../libdlm
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
 BIN_LDFLAGS += `xml2-config --libs`
-BIN_LDFLAGS += -lpthread -lrt -lcpg -lconfdb -lcfg -lquorum -lfenced
+BIN_LDFLAGS += -lpthread -lrt -lcpg -lconfdb -lcfg -lquorum
+#BIN_LDFLAGS += -lfenced
 
 LIB_CFLAGS += $(BIN_CFLAGS)
 LIB_LDFLAGS += -Wl,-z,relro -pie

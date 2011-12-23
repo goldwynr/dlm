@@ -7,10 +7,11 @@
  */
 
 #include "dlm_daemon.h"
-#include "libfenced.h"
+//#include "libfenced.h"
 
 int fence_node_time(int nodeid, uint64_t *last_fenced_time)
 {
+/*
 	struct fenced_node nodeinfo;
 	int rv;
 
@@ -21,12 +22,13 @@ int fence_node_time(int nodeid, uint64_t *last_fenced_time)
 		return rv;
 
 	*last_fenced_time = nodeinfo.last_fenced_time;
+*/
 	return 0;
 }
 
 int fence_in_progress(int *count)
 {
-	struct fenced_domain domain;
+/*	struct fenced_domain domain;
 	int rv;
 
 	memset(&domain, 0, sizeof(domain));
@@ -36,6 +38,7 @@ int fence_in_progress(int *count)
 		return rv;
 
 	*count = domain.victim_count;
+*/
 	return 0;
 }
 
