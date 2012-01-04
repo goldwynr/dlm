@@ -2520,8 +2520,16 @@ int setup_cpg_daemon(void)
 
 	INIT_LIST_HEAD(&daemon_nodes);
 
+	/* daemon 1.1.1 was cluster3/STABLE3/RHEL6 which is incompatible
+	   with cluster4/RHEL7 */ 
+
 	memset(&our_protocol, 0, sizeof(our_protocol));
-	our_protocol.daemon_max[0] = 2;
+
+	if (cfgd_enable_fscontrol)
+		our_protocol.daemon_max[0] = 2;
+	else
+		our_protocol.daemon_max[0] = 3;
+
 	our_protocol.daemon_max[1] = 1;
 	our_protocol.daemon_max[2] = 1;
 	our_protocol.kernel_max[0] = 1;
