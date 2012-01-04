@@ -35,7 +35,7 @@ static int detect_protocol(void)
 
 	rv = cmap_get_string(handle, "totem.rrp_mode", &str);
 	if (rv != CS_OK) {
-		log_error("cmap_get_string error %d", rv);
+		log_error("cmap_get_string totem.rrp_mode error %d", rv);
 		goto out;
 	}
 
@@ -69,7 +69,7 @@ static int detect_cluster_name(void)
 
 	rv = cmap_get_string(handle, "cluster.name", &str);
 	if (rv != CS_OK) {
-		log_error("cmap_get_string error %d", rv);
+		log_error("cmap_get_string cluster.name error %d", rv);
 		goto out;
 	} else
 		err = 0;

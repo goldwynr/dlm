@@ -657,8 +657,10 @@ static int need_fencing(struct lockspace *ls)
 	struct node *node;
 
 	list_for_each_entry(node, &ls->node_history, list) {
-		if (node->check_fencing)
+		if (node->check_fencing) {
+			log_group(ls, "need_fencing %d", node->nodeid);
 			return 1;
+		}
 	}
 	return 0;
 }
