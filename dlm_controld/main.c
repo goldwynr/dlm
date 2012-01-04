@@ -650,14 +650,7 @@ static void process_connection(int ci)
 
 	switch (h.command) {
 	case DLMC_CMD_FS_REGISTER:
-		if (cfgd_enable_fscontrol) {
-			rv = fs_register_add(h.name);
-			ls = find_ls(h.name);
-			if (ls)
-				ls->fs_registered = 1;
-		} else {
-			rv = -EOPNOTSUPP;
-		}
+		rv = -EOPNOTSUPP;
 		do_reply(client[ci].fd, DLMC_CMD_FS_REGISTER, h.name, rv, 0,
 			 NULL, 0);
 		break;
@@ -1098,8 +1091,6 @@ static void print_usage(void)
 	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
 	printf("  -q <num>	Enable (1) or disable (0) quorum recovery dependency\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM);
-	printf("  -s <num>      Enable (1) or disable (0) fs_controld recovery coordination\n");
-	printf("                Default is %d\n", DEFAULT_ENABLE_FSCONTROL);
 #if 0
 	printf("  -d <num>	Enable (1) or disable (0) deadlock detection code\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_DEADLK);
@@ -1159,11 +1150,6 @@ static void read_arguments(int argc, char **argv)
 		case 'q':
 			optd_enable_quorum = 1;
 			cfgd_enable_quorum = atoi(optarg);
-			break;
-
-		case 's':
-			optd_enable_fscontrol = 1;
-			cfgd_enable_fscontrol = atoi(optarg);
 			break;
 
 		case 'p':
@@ -1264,7 +1250,6 @@ int main(int argc, char **argv)
 	cfgd_debug_logfile          = DEFAULT_DEBUG_LOGFILE;
 	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
 	cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;
-	cfgd_enable_quorum          = DEFAULT_ENABLE_FSCONTROL;
 	cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
 	cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
 	cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;

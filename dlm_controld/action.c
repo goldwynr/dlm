@@ -840,19 +840,14 @@ int setup_configfs_options(void)
 	 * go ahead without the monitor being open
 	 */
 
-	if (cfgd_enable_fscontrol) {
-		/* deprecated */
-		set_configfs_cluster("recover_callbacks", NULL, 0);
-	} else {
-		set_configfs_cluster("recover_callbacks", NULL, 1);
+	set_configfs_cluster("recover_callbacks", NULL, 1);
 
-		detect_cluster_name();
+	detect_cluster_name();
 
-		if (cluster_name[0])
-			set_configfs_cluster("cluster_name", cluster_name, 0);
-		else
-			log_error("no cluster name");
-	}
+	if (cluster_name[0])
+		set_configfs_cluster("cluster_name", cluster_name, 0);
+	else
+		log_error("no cluster name");
 	return 0;
 }
 

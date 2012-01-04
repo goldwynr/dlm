@@ -86,7 +86,6 @@ void setup_config(int update)
 	set_val(root, "timewarn", &optk_timewarn, &cfgk_timewarn);
 	set_val(root, "enable_fencing", &optd_enable_fencing, &cfgd_enable_fencing);
 	set_val(root, "enable_quorum", &optd_enable_quorum, &cfgd_enable_quorum);
-	set_val(root, "enable_fscontrol", &optd_enable_fscontrol, &cfgd_enable_fscontrol);
 	set_val(root, "enable_plock", &optd_enable_plock, &cfgd_enable_plock);
 	set_val(root, "plock_ownership", &optd_plock_ownership, &cfgd_plock_ownership);
  do_update:
