@@ -82,6 +82,7 @@
 #define DEFAULT_DEBUG_LOGFILE 0
 #define DEFAULT_ENABLE_FENCING 1
 #define DEFAULT_ENABLE_QUORUM 1
+#define DEFAULT_ENABLE_FSCONTROL 0
 #define DEFAULT_ENABLE_PLOCK 1
 #define DEFAULT_PLOCK_DEBUG 0
 #define DEFAULT_PLOCK_RATE_LIMIT 0
@@ -142,6 +143,7 @@ EXTERN int optk_protocol;
 EXTERN int optd_debug_logfile;
 EXTERN int optd_enable_fencing;
 EXTERN int optd_enable_quorum;
+EXTERN int optd_enable_fscontrol;
 EXTERN int optd_enable_plock;
 EXTERN int optd_plock_debug;
 EXTERN int optd_plock_rate_limit;
@@ -156,6 +158,7 @@ EXTERN int cfgk_protocol;
 EXTERN int cfgd_debug_logfile;
 EXTERN int cfgd_enable_fencing;
 EXTERN int cfgd_enable_quorum;
+EXTERN int cfgd_enable_fscontrol;
 EXTERN int cfgd_enable_plock;
 EXTERN int cfgd_plock_debug;
 EXTERN int cfgd_plock_rate_limit;
