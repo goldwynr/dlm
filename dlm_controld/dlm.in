@@ -28,13 +28,24 @@ exec="/usr/sbin/$prog"
 
 [ -f /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
 
+setup() {
+	modprobe dlm > /dev/null 2>&1
+	mount -t configfs none /sys/kernel/config > /dev/null 2>&1
+}
+
 start() {
+	breakpoint="$1"
+
 	[ -x $exec ] || exit 5
 
 	if [ ! -d /var/run/$progdir ]; then
 		mkdir -p /var/run/$progdir
 		[ -x /usr/sbin/restorecon ] && restorecon /var/run/$progdir
 	fi
+
+	setup
+
+	[ "$breakpoint" = "setup" ] && exit 0
 
 	echo -n $"Starting $prog: "
 	daemon $prog $DLM_CONTROLD_OPTS
@@ -79,7 +90,7 @@ rh_status_q() {
 case "$1" in
 	start)
 		rh_status_q && exit 0
-		$1
+		$1 "$2"
 		;;
 	stop)
 		rh_status_q || exit 0
