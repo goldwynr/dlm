@@ -33,6 +33,7 @@ BIN_CFLAGS += -fPIE -DPIE
 BIN_CFLAGS += -I../include -I../libdlm -I../dlm_controld
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
+BIN_LDFLAGS += -L../libdlm -L../dlm_controld
 BIN_LDFLAGS += -lpthread -ldlm -ldlmcontrol
 
 all: $(BIN_TARGET)
