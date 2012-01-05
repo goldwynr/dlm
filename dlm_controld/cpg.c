@@ -682,25 +682,6 @@ static void request_fencing(struct lockspace *ls)
 	}
 }
 
-/* we know that the quorum value here is consistent with the cpg events
-   because the ringid's are in sync per the previous check_ringid_done */
-
-static int check_quorum_done(struct lockspace *ls)
-{
-	if (!cfgd_enable_quorum) {
-		log_group(ls, "check_quorum disabled");
-		return 1;
-	}
-
-	if (!cluster_quorate) {
-		log_group(ls, "check_quorum not quorate");
-		return 0;
-	}
-
-	log_group(ls, "check_quorum done");
-	return 1;
-}
-
 /* wait for local fs_controld to ack each failed node */
 
 static int check_fs_done(struct lockspace *ls)
@@ -709,10 +690,8 @@ static int check_fs_done(struct lockspace *ls)
 	int wait_count = 0;
 
 	/* no corresponding fs for this lockspace */
-	if (!ls->fs_registered) {
-		log_group(ls, "check_fs none registered");
+	if (!ls->fs_registered)
 		return 1;
-	}
 
 	list_for_each_entry(node, &ls->node_history, list) {
 		if (!node->check_fs)
@@ -827,19 +806,41 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
    that have occured since the last change applied to dlm-kernel, not
    just the latest change */
 
+/* we know that the cluster_quorate value here is consistent with the cpg events
+   because the ringid's are in sync per the check_ringid_done */
+
+/*
+   enable_quorum = 0
+	Never wait for quorum here.
+
+   enable_quorum = 1
+	Wait for quorum before calling request_fencing() in cases where
+	fencing is needed.  Reason for using this would be if fencing
+	system doesn't wait for quorum before carrying out a fencing
+	request, and we want to avoid having partitioned inquorate nodes
+	fencing quorate nodes in another partition.
+	   
+   enable_quorum = 2
+	Always wait for quorum as a general condition here. This
+	means that lockspace join/leave operations would block waiting
+	for quorum.  There's not any reason to do this per se, unless
+	that's the behavior the application using the dlm wants.
+*/
+
 static int wait_conditions_done(struct lockspace *ls)
 {
 	if (!check_ringid_done(ls))
 		return 0;
 
-	/* It's convenient to be able to join and leave lockspaces without
-	   having quorum.  If the fencing system does not wait for quorum
-	   before carrying out fencing requests, then we may want to wait for
-	   quorum here before requesting fencing, to avoid having partitioned
-	   nodes fence good nodes. */
-
-	if (need_fencing(ls) && !check_quorum_done(ls))
+	if ((cfgd_enable_quorum > 1) && !cluster_quorate) {
+		log_group(ls, "wait for quorum");
 		return 0;
+	}
+
+	if ((cfgd_enable_quorum > 0) && need_fencing(ls) && !cluster_quorate) {
+		log_group(ls, "wait for quorum before fencing");
+		return 0;
+	}
 
 	request_fencing(ls);
 
