@@ -243,8 +243,7 @@ void kick_node_from_cluster(int nodeid)
 		corosync_cfg_try_shutdown(ch,
 				COROSYNC_CFG_SHUTDOWN_FLAG_IMMEDIATE);
 	} else {
-		log_error("telling corosync to remove nodeid %d from cluster",
-			  nodeid);
+		log_error("tell corosync to remove nodeid %d from cluster", nodeid);
 		corosync_cfg_kill_node(ch, nodeid, "dlm_controld");
 	}
 }
@@ -253,13 +252,12 @@ static void shutdown_callback(corosync_cfg_handle_t h,
 			      corosync_cfg_shutdown_flags_t flags)
 {
 	if (flags & COROSYNC_CFG_SHUTDOWN_FLAG_REQUEST) {
-		if (list_empty(&lockspaces))
-			corosync_cfg_replyto_shutdown(ch,
-					COROSYNC_CFG_SHUTDOWN_FLAG_YES);
-		else {
-			log_debug("no to corosync shutdown");
-			corosync_cfg_replyto_shutdown(ch,
-					COROSYNC_CFG_SHUTDOWN_FLAG_NO);
+		if (list_empty(&lockspaces)) {
+			log_debug("shutdown request yes");
+			corosync_cfg_replyto_shutdown(ch, COROSYNC_CFG_SHUTDOWN_FLAG_YES);
+		} else {
+			log_debug("shutdown request no");
+			corosync_cfg_replyto_shutdown(ch, COROSYNC_CFG_SHUTDOWN_FLAG_NO);
 		}
 	}
 }

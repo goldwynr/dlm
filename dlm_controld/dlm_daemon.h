@@ -226,6 +226,7 @@ struct lockspace {
 
 	cpg_handle_t		cpg_handle;
 	struct cpg_ring_id	cpg_ringid;
+	int			cpg_ringid_wait;
 	int			cpg_client;
 	int			cpg_fd;
 	int			joining;

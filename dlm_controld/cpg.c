@@ -564,6 +564,27 @@ static void node_history_start(struct lockspace *ls, int nodeid)
 
 static int check_ringid_done(struct lockspace *ls)
 {
+	/* If we've received a confchg due to a nodedown, but not
+	   the corresponding ringid callback, then we should wait
+	   for the ringid callback.  Once we have both conf and ring
+	   callbacks, we can compare cpg/quorum ringids.
+	   
+	   Otherwise, there's a possible problem if we receive a
+	   confchg before both ringid callback and quorum callback.
+	   Then we'd get through this function by comparing the old,
+	   matching ringids.
+
+	   (We seem to usually get the quorum callback before any cpg
+	   callbacks, in which case we wouldn't need cpg_ringid_wait,
+	   but that's probably not guaranteed.) */
+
+	if (ls->cpg_ringid_wait) {
+		log_group(ls, "check_ringid wait cluster %u cpg %u:%llu",
+			  cluster_ringid_seq, ls->cpg_ringid.nodeid,
+			  (unsigned long long)ls->cpg_ringid.seq);
+		return 0;
+	}
+
 	if (cluster_ringid_seq != (uint32_t)ls->cpg_ringid.seq) {
 		log_group(ls, "check_ringid cluster %u cpg %u:%llu",
 			  cluster_ringid_seq, ls->cpg_ringid.nodeid,
@@ -1434,6 +1455,24 @@ void process_lockspace_changes(void)
 	}
 }
 
+static const char *reason_str(int reason)
+{
+	switch (reason) {
+	case CPG_REASON_JOIN:
+		return "join";
+	case CPG_REASON_LEAVE:
+		return "leave";
+	case CPG_REASON_NODEDOWN:
+		return "nodedown";
+	case CPG_REASON_NODEUP:
+		return "nodeup";
+	case CPG_REASON_PROCDOWN:
+		return "procdown";
+	default:
+		return "unknown";
+	};
+}
+
 static int add_change(struct lockspace *ls,
 		      const struct cpg_address *member_list,
 		      size_t member_list_entries,
@@ -1486,6 +1525,9 @@ static int add_change(struct lockspace *ls,
 		}
 		list_add_tail(&memb->list, &cg->removed);
 
+		if (left_list[i].reason == CPG_REASON_NODEDOWN)
+			ls->cpg_ringid_wait = 1;
+
 		if (memb->failed) {
 			node_history_lockspace_fail(ls, memb->nodeid, cg,
 						    left_list[i].reason, now);
@@ -1493,8 +1535,8 @@ static int add_change(struct lockspace *ls,
 			node_history_lockspace_left(ls, memb->nodeid, cg, now);
 		}
 
-		log_group(ls, "add_change cg %u remove nodeid %d reason %d",
-			  cg->seq, memb->nodeid, left_list[i].reason);
+		log_group(ls, "add_change cg %u remove nodeid %d reason %s",
+			  cg->seq, memb->nodeid, reason_str(left_list[i].reason));
 
 		if (left_list[i].reason == CPG_REASON_PROCDOWN)
 			kick_node_from_cluster(memb->nodeid);
@@ -1829,6 +1871,7 @@ static void totem_cb(cpg_handle_t handle,
 
 	ls->cpg_ringid.nodeid = ring_id.nodeid;
 	ls->cpg_ringid.seq = ring_id.seq;
+	ls->cpg_ringid_wait = 0;
 
 	apply_changes(ls);
 }
@@ -2450,11 +2493,25 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 {
 	struct node_daemon *node;
 	uint64_t now = monotime();
+	int nodedown = 0, procdown = 0, leave = 0;
 	int i;
 
 	log_config(group_name, member_list, member_list_entries,
 		   left_list, left_list_entries,
 		   joined_list, joined_list_entries);
+
+	for (i = 0; i < left_list_entries; i++) {
+		if (left_list[i].reason == CPG_REASON_NODEDOWN)
+			nodedown++;
+		else if (left_list[i].reason == CPG_REASON_PROCDOWN)
+			procdown++;
+		else if (left_list[i].reason == CPG_REASON_LEAVE)
+			leave++;
+	}
+
+	if (nodedown || procdown || leave)
+		log_debug("%s left nodedown %d procdown %d leave %d",
+			  group_name->value, nodedown, procdown, leave);
 
 	if (joined_list_entries)
 		send_protocol(&our_protocol);
