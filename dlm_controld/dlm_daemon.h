@@ -41,7 +41,6 @@
 #include <dirent.h>
 
 #include <corosync/cpg.h>
-#include <liblogthread.h>
 
 #include <linux/dlmconstants.h>
 #include "libdlmcontrol.h"
