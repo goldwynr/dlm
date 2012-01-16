@@ -1,6 +1,6 @@
 #ifndef _RELEASE_VERSION_CF_
 #define _RELEASE_VERSION_CF_
 
-#define RELEASE_VERSION "master"
+#define RELEASE_VERSION "3.9.0"
 
 #endif
