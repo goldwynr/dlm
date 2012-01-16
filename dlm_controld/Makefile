@@ -5,15 +5,14 @@ BINDIR=$(PREFIX)/sbin
 LIBDIR=$(PREFIX)/$(LIBNUM)
 HDRDIR=$(PREFIX)/include 
 MANDIR=$(PREFIX)/share/man
-INIDIR=/etc/init.d
+INITDIR=/etc/init.d
+UNITDIR=/lib/systemd/system
 
 BIN_TARGET = dlm_controld
-
 MAN_TARGET = dlm_controld.8
-
 HDR_TARGET = libdlmcontrol.h
-
-INI_TARGET = dlm
+INIT_TARGET = dlm
+UNIT_TARGET = dlm.service
 
 LIB_NAME = libdlmcontrol
 LIB_MAJOR = 3
@@ -33,7 +32,8 @@ BIN_SOURCE = action.c \
              logging.c \
              rbtree.c
 LIB_SOURCE = lib.c
-INI_SOURCE = dlm.in
+INIT_SOURCE = dlm.in
+UNIT_SOURCE = dlm.service.in
 
 BIN_CFLAGS += -D_GNU_SOURCE -g \
 	-Wall \
@@ -68,7 +68,7 @@ BIN_LDFLAGS += -lpthread -lrt -lcpg -lcmap -lcfg -lquorum
 LIB_CFLAGS += $(BIN_CFLAGS)
 LIB_LDFLAGS += -Wl,-z,relro -pie
 
-all: $(LIB_TARGET) $(BIN_TARGET) $(INI_TARGET)
+all: $(LIB_TARGET) $(BIN_TARGET) $(INIT_TARGET) $(UNIT_TARGET)
 
 $(BIN_TARGET): $(BIN_SOURCE)
 	$(CC) $(BIN_CFLAGS) $(BIN_LDFLAGS) $(BIN_SOURCE) -o $@ -L.
@@ -78,11 +78,14 @@ $(LIB_TARGET): $(LIB_SOURCE)
 	ln -sf $(LIB_TARGET) $(LIB_SO)
 	ln -sf $(LIB_TARGET) $(LIB_SMAJOR)
 
-$(INI_TARGET): $(INI_SOURCE)
-	cp $(INI_SOURCE) $(INI_TARGET)
+$(INIT_TARGET): $(INIT_SOURCE)
+	cp $(INIT_SOURCE) $(INIT_TARGET)
+
+$(UNIT_TARGET): $(UNIT_SOURCE)
+	cp $(UNIT_SOURCE) $(UNIT_TARGET)
 	
 clean:
-	rm -f *.o *.so *.so.* $(BIN_TARGET) $(LIB_TARGET) $(INI_TARGET)
+	rm -f *.o *.so *.so.* $(BIN_TARGET) $(LIB_TARGET) $(INIT_TARGET) $(UNIT_TARGET)
 
 
 INSTALL=$(shell which install)
@@ -92,13 +95,15 @@ install: all
 	$(INSTALL) -d $(DESTDIR)/$(BINDIR)
 	$(INSTALL) -d $(DESTDIR)/$(LIBDIR)
 	$(INSTALL) -d $(DESTDIR)/$(HDRDIR)
-	$(INSTALL) -d $(DESTDIR)/$(INIDIR)
+	$(INSTALL) -d $(DESTDIR)/$(INITDIR)
+	$(INSTALL) -d $(DESTDIR)/$(UNITDIR)
 	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man8
 	$(INSTALL) -c -m 755 $(BIN_TARGET) $(DESTDIR)/$(BINDIR)
 	$(INSTALL) -c -m 755 $(LIB_TARGET) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LIB_SO) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LIB_SMAJOR) $(DESTDIR)/$(LIBDIR)
 	$(INSTALL) -c -m 644 $(HDR_TARGET) $(DESTDIR)/$(HDRDIR)
-	$(INSTALL) -m 755 $(INI_TARGET) $(DESTDIR)/$(INIDIR)
+	$(INSTALL) -m 755 $(INIT_TARGET) $(DESTDIR)/$(INITDIR)
+	$(INSTALL) -m 755 $(UNIT_TARGET) $(DESTDIR)/$(UNITDIR)
 	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man8/
 
