@@ -1,0 +1,11 @@
+[Unit]
+Description=dlm control daemon
+After=syslog.target network.target corosync.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/dlm_controld $OPTIONS
+
+[Install]
+WantedBy=multi-user.target
+
