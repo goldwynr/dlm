@@ -5,7 +5,7 @@ LIBDIR=$(PREFIX)/$(LIBNUM)
 HDRDIR=$(PREFIX)/include 
 MANDIR=$(PREFIX)/share/man
 PKGDIR=$(PREFIX)/$(LIBNUM)/pkgconfig
-UDEVDIR=/lib/udev/rules.d
+UDEVDIR=/etc/udev/rules.d
 
 LIB_NAME = libdlm
 LIB_MAJOR = 3
