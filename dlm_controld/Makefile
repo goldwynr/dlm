@@ -5,7 +5,7 @@ BINDIR=$(PREFIX)/sbin
 LIBDIR=$(PREFIX)/$(LIBNUM)
 HDRDIR=$(PREFIX)/include 
 MANDIR=$(PREFIX)/share/man
-INITDIR=/etc/init.d
+INITDIR=/etc/rc.d/init.d
 UNITDIR=/lib/systemd/system
 
 BIN_TARGET = dlm_controld
