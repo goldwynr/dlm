@@ -4,7 +4,7 @@ LIBNUM=/lib64
 LIBDIR=$(PREFIX)/$(LIBNUM)
 HDRDIR=$(PREFIX)/include 
 MANDIR=$(PREFIX)/share/man
-PKGDIR=$(PREFIX)/$(LIBNUM)/pkgconfig
+PKGDIR=$(LIBDIR)/pkgconfig
 UDEVDIR=/lib/udev/rules.d
 
 LIB_NAME = libdlm
