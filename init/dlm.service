@@ -4,7 +4,8 @@ After=syslog.target network.target corosync.service
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/dlm_controld $OPTIONS
+ExecStart=/lib/systemd/systemd-dlm start
+ExecStop=/lib/systemd/systemd-dlm stop
 
 [Install]
 WantedBy=multi-user.target
