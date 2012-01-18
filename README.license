@@ -1,0 +1,16 @@
+LGPLv2+
+
+libdlm/libdlm.c
+libdlm/libdlm.h
+libdlm/libdlm_internal.h
+
+GPLv2
+
+dlm_controld/list.h (copied from linux kernel)
+
+GPLv2+
+
+dlm_controld/rbtree.c (copied from linux kernel)
+dlm_controld/rbtree.h (copied from linux kernel)
+all other original files
+
