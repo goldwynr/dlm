@@ -67,14 +67,14 @@ static int detect_cluster_name(void)
 		return -1; 
 	}
 
-	rv = cmap_get_string(handle, "cluster.name", &str);
+	rv = cmap_get_string(handle, "totem.cluster_name", &str);
 	if (rv != CS_OK) {
-		log_error("cmap_get_string cluster.name error %d", rv);
+		log_error("cmap_get_string totem.cluster_name error %d", rv);
 		goto out;
 	} else
 		err = 0;
 
-	log_debug("cmap cluster.name = '%s'", str);
+	log_debug("cmap totem.cluster_name = '%s'", str);
 
 	strncpy(cluster_name, str, DLM_LOCKSPACE_LEN);
  out:
