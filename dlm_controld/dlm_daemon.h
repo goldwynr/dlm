@@ -348,6 +348,7 @@ void process_cluster_cfg(int ci);
 void kick_node_from_cluster(int nodeid);
 
 /* fence.c */
+void fence_request(int nodeid);
 int fence_node_time(int nodeid, uint64_t *last_fenced_time);
 int fence_in_progress(int *count);
 

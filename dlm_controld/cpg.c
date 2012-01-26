@@ -686,6 +686,11 @@ static int need_fencing(struct lockspace *ls)
 	return 0;
 }
 
+/* we don't need to ask fenced to initiate fencing; it does
+   so itself when it sees a fence domain member fail.  Without
+   fenced we'll probably need to ask another daemon to initiate
+   fencing, then check with it above, like we check libfenced. */
+
 static void request_fencing(struct lockspace *ls)
 {
 	struct node *node;
@@ -693,12 +698,7 @@ static void request_fencing(struct lockspace *ls)
 	list_for_each_entry(node, &ls->node_history, list) {
 		if (!node->request_fencing)
 			continue;
-
-		/* we don't need to ask fenced to initiate fencing; it does
-		   so itself when it sees a fence domain member fail.  Without
-		   fenced we'll probably need to ask another daemon to initiate
-		   fencing, then check with it above, like we check libfenced. */
-
+		fence_request(node->nodeid);
 		node->request_fencing = 0;
 	}
 }
