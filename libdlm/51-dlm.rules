@@ -1,5 +1,4 @@
-KERNEL=="dlm-control", NAME="misc/dlm-control", MODE="0666"
-KERNEL=="dlm-monitor", NAME="misc/dlm-monitor", MODE="0666"
-KERNEL=="dlm_default", NAME="misc/dlm_default", MODE="0666"
-KERNEL=="dlm_*", NAME="misc/%k", MODE="0660"
-
+KERNEL=="dlm-control", MODE="0666", SYMLINK+="misc/dlm-control"
+KERNEL=="dlm-monitor", MODE="0666", SYMLINK+="misc/dlm-monitor"
+KERNEL=="dlm_plock", MODE="0666", SYMLINK+="misc/dlm_plock"
+KERNEL=="dlm_*", MODE="0660", SYMLINK+="misc/%k"
