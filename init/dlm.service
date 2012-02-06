@@ -4,8 +4,9 @@ After=syslog.target network.target corosync.service
 
 [Service]
 Type=forking
+EnvironmentFile=/etc/sysconfig/dlm_controld
 ExecStartPre=/sbin/modprobe dlm 
-ExecStart=/usr/sbin/dlm_controld $OPTIONS
+ExecStart=/usr/sbin/dlm_controld $DLM_CONTROLD_OPTS
 #ExecStopPost=/sbin/modprobe -r dlm
 
 [Install]
