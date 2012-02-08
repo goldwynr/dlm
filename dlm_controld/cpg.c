@@ -280,7 +280,7 @@ const char *msg_name(int type)
 static int _send_message(cpg_handle_t h, void *buf, int len, int type)
 {
 	struct iovec iov;
-	cpg_error_t error;
+	cs_error_t error;
 	int retries = 0;
 
 	iov.iov_base = buf;
@@ -288,7 +288,7 @@ static int _send_message(cpg_handle_t h, void *buf, int len, int type)
 
  retry:
 	error = cpg_mcast_joined(h, CPG_TYPE_AGREED, &iov, 1);
-	if (error == CPG_ERR_TRY_AGAIN) {
+	if (error == CS_ERR_TRY_AGAIN) {
 		retries++;
 		usleep(1000);
 		if (!(retries % 100))
@@ -296,7 +296,7 @@ static int _send_message(cpg_handle_t h, void *buf, int len, int type)
 				   retries, msg_name(type));
 		goto retry;
 	}
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("cpg_mcast_joined error %d handle %llx %s",
 			  error, (unsigned long long)h, msg_name(type));
 		return -1;
@@ -1886,11 +1886,11 @@ static cpg_model_v1_data_t cpg_callbacks = {
 void update_flow_control_status(void)
 {
 	cpg_flow_control_state_t flow_control_state;
-	cpg_error_t error;
+	cs_error_t error;
 
 	error = cpg_flow_control_state_get(cpg_handle_daemon,
 					   &flow_control_state);
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("cpg_flow_control_state_get %d", error);
 		return;
 	}
@@ -1911,7 +1911,7 @@ void update_flow_control_status(void)
 static void process_cpg_lockspace(int ci)
 {
 	struct lockspace *ls;
-	cpg_error_t error;
+	cs_error_t error;
 
 	ls = find_ls_ci(ci);
 	if (!ls) {
@@ -1919,8 +1919,8 @@ static void process_cpg_lockspace(int ci)
 		return;
 	}
 
-	error = cpg_dispatch(ls->cpg_handle, CPG_DISPATCH_ALL);
-	if (error != CPG_OK) {
+	error = cpg_dispatch(ls->cpg_handle, CS_DISPATCH_ALL);
+	if (error != CS_OK) {
 		log_error("cpg_dispatch error %d", error);
 		return;
 	}
@@ -1932,7 +1932,7 @@ static void process_cpg_lockspace(int ci)
 
 int dlm_join_lockspace(struct lockspace *ls)
 {
-	cpg_error_t error;
+	cs_error_t error;
 	cpg_handle_t h;
 	struct cpg_name name;
 	int i = 0, fd, ci, rv;
@@ -1947,7 +1947,7 @@ int dlm_join_lockspace(struct lockspace *ls)
 
 	error = cpg_model_initialize(&h, CPG_MODEL_V1,
 				     (cpg_model_data_t *)&cpg_callbacks, NULL);
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("cpg_model_initialize error %d", error);
 		rv = -1;
 		goto fail_free;
@@ -1976,13 +1976,13 @@ int dlm_join_lockspace(struct lockspace *ls)
 	log_group(ls, "cpg_join %s ...", name.value);
  retry:
 	error = cpg_join(h, &name);
-	if (error == CPG_ERR_TRY_AGAIN) {
+	if (error == CS_ERR_TRY_AGAIN) {
 		sleep(1);
 		if (!(++i % 10))
 			log_error("cpg_join error retrying");
 		goto retry;
 	}
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("cpg_join error %d", error);
 		cpg_finalize(h);
 		rv = -1;
@@ -2005,7 +2005,7 @@ int dlm_join_lockspace(struct lockspace *ls)
 
 int dlm_leave_lockspace(struct lockspace *ls)
 {
-	cpg_error_t error;
+	cs_error_t error;
 	struct cpg_name name;
 	int i = 0;
 
@@ -2017,13 +2017,13 @@ int dlm_leave_lockspace(struct lockspace *ls)
 
  retry:
 	error = cpg_leave(ls->cpg_handle, &name);
-	if (error == CPG_ERR_TRY_AGAIN) {
+	if (error == CS_ERR_TRY_AGAIN) {
 		sleep(1);
 		if (!(++i % 10))
 			log_error("cpg_leave error retrying");
 		goto retry;
 	}
-	if (error != CPG_OK)
+	if (error != CS_OK)
 		log_error("cpg_leave error %d", error);
 
 	return 0;
@@ -2563,16 +2563,16 @@ static cpg_model_v1_data_t cpg_callbacks_daemon = {
 
 void process_cpg_daemon(int ci)
 {
-	cpg_error_t error;
+	cs_error_t error;
 
-	error = cpg_dispatch(cpg_handle_daemon, CPG_DISPATCH_ALL);
-	if (error != CPG_OK)
+	error = cpg_dispatch(cpg_handle_daemon, CS_DISPATCH_ALL);
+	if (error != CS_OK)
 		log_error("daemon cpg_dispatch error %d", error);
 }
 
 int setup_cpg_daemon(void)
 {
-	cpg_error_t error;
+	cs_error_t error;
 	struct cpg_name name;
 	int i = 0;
 
@@ -2597,7 +2597,7 @@ int setup_cpg_daemon(void)
 	error = cpg_model_initialize(&cpg_handle_daemon, CPG_MODEL_V1,
 				     (cpg_model_data_t *)&cpg_callbacks_daemon,
 				     NULL);
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("daemon cpg_initialize error %d", error);
 		return -1;
 	}
@@ -2611,13 +2611,13 @@ int setup_cpg_daemon(void)
 	log_debug("cpg_join %s ...", name.value);
  retry:
 	error = cpg_join(cpg_handle_daemon, &name);
-	if (error == CPG_ERR_TRY_AGAIN) {
+	if (error == CS_ERR_TRY_AGAIN) {
 		sleep(1);
 		if (!(++i % 10))
 			log_error("daemon cpg_join error retrying");
 		goto retry;
 	}
-	if (error != CPG_OK) {
+	if (error != CS_OK) {
 		log_error("daemon cpg_join error %d", error);
 		goto fail;
 	}
@@ -2633,7 +2633,7 @@ int setup_cpg_daemon(void)
 void close_cpg_daemon(void)
 {
 	struct lockspace *ls;
-	cpg_error_t error;
+	cs_error_t error;
 	struct cpg_name name;
 	int i = 0;
 
@@ -2649,13 +2649,13 @@ void close_cpg_daemon(void)
 	log_debug("cpg_leave %s ...", name.value);
  retry:
 	error = cpg_leave(cpg_handle_daemon, &name);
-	if (error == CPG_ERR_TRY_AGAIN) {
+	if (error == CS_ERR_TRY_AGAIN) {
 		sleep(1);
 		if (!(++i % 10))
 			log_error("daemon cpg_leave error retrying");
 		goto retry;
 	}
-	if (error != CPG_OK)
+	if (error != CS_OK)
 		log_error("daemon cpg_leave error %d", error);
  fin:
 	list_for_each_entry(ls, &lockspaces, list) {
