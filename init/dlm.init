@@ -26,7 +26,7 @@ progdir="cluster"
 lockfile="/var/run/$progdir/$prog.pid"
 exec="/usr/sbin/$prog"
 
-[ -f /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
+[ -f /etc/sysconfig/dlm ] && . /etc/sysconfig/dlm
 
 setup() {
 	modprobe dlm > /dev/null 2>&1
