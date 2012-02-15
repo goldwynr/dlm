@@ -265,7 +265,6 @@ static void shutdown_callback(corosync_cfg_handle_t h,
 static corosync_cfg_callbacks_t cfg_callbacks =
 {
 	.corosync_cfg_shutdown_callback = shutdown_callback,
-	.corosync_cfg_state_track_callback = NULL,
 };
 
 void process_cluster_cfg(int ci)
