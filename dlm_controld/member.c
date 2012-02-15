@@ -302,8 +302,15 @@ int setup_cluster_cfg(void)
 		corosync_cfg_finalize(ch);
 		return -1;
 	}
+
 	our_nodeid = nodeid;
 	log_debug("our_nodeid %d", our_nodeid);
+
+	if (our_nodeid < 0) {
+		log_error("negative nodeid, set corosync totem.clear_node_high_bit");
+		corosync_cfg_finalize(ch);
+		return -1;
+	}
 
 	return fd;
 }
