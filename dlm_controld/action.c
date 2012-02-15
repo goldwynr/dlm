@@ -848,10 +848,12 @@ int setup_configfs_options(void)
 
 		detect_cluster_name();
 
-		if (cluster_name[0])
+		if (cluster_name[0]) {
 			set_configfs_cluster("cluster_name", cluster_name, 0);
-		else
+		} else {
 			log_error("no cluster name");
+			return -1;
+		}
 	}
 	return 0;
 }
