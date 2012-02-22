@@ -618,8 +618,10 @@ static int check_fencing_done(struct lockspace *ls)
 		   fenced since node->start_time */
 
 		rv = fence_node_time(node->nodeid, &last_fenced_time);
-		if (rv < 0)
-			log_error("fenced_node_info error %d", rv);
+		if (rv < 0) {
+			log_error("fenced_node_time error %d", rv);
+			continue;
+		}
 
 		/* fenced gives us real time */
 
@@ -653,8 +655,10 @@ static int check_fencing_done(struct lockspace *ls)
 		}
 	}
 
-	if (wait_count)
+	if (wait_count) {
+		log_group(ls, "check_fencing wait_count %d", wait_count);
 		return 0;
+	}
 
 	/* now check if there are any outstanding fencing ops (for nodes
 	   we may not have seen in any lockspace), and return 0 if there
@@ -666,8 +670,10 @@ static int check_fencing_done(struct lockspace *ls)
 		return 0;
 	}
 
-	if (in_progress)
+	if (in_progress) {
+		log_group(ls, "check_fencing in progress %d", in_progress);
 		return 0;
+	}
 
 	log_group(ls, "check_fencing done");
 	return 1;
@@ -694,12 +700,15 @@ static int need_fencing(struct lockspace *ls)
 static void request_fencing(struct lockspace *ls)
 {
 	struct node *node;
+	int rv;
 
 	list_for_each_entry(node, &ls->node_history, list) {
 		if (!node->request_fencing)
 			continue;
-		fence_request(node->nodeid);
-		node->request_fencing = 0;
+		log_group(ls, "fence_request %d", node->nodeid);
+		rv = fence_request(node->nodeid);
+		if (!rv)
+			node->request_fencing = 0;
 	}
 }
 

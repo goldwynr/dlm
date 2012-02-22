@@ -7,30 +7,28 @@
  */
 
 #include "dlm_daemon.h"
-#ifdef STONITH
 #include <pacemaker/crm/stonith-ng.h>
-#endif
 
-void fence_request(int nodeid)
+int fence_request(int nodeid)
 {
-#ifdef STONITH
 	int rv;
-	rv = stonith_api_kick_cs_helper(nodeid, 300, 1);
-	if (rv)
-		log_error("stonith_api_kick_cs_helper %d error %d", nodeid, rv);
-#endif
+	rv = stonith_api_kick_helper(nodeid, 300, 1);
+	if (rv) {
+		log_error("stonith_api_kick_helper %d error %d", nodeid, rv);
+		return rv;
+	}
+	return 0;
 }
 
 int fence_node_time(int nodeid, uint64_t *last_fenced_time)
 {
-#ifdef STONITH
-	*last_fenced_time = stonith_api_time_cs_helper(nodeid, 0);
-#endif
+	*last_fenced_time = stonith_api_time_helper(nodeid, 0);
 	return 0;
 }
 
 int fence_in_progress(int *count)
 {
+	*count = 0;
 	return 0;
 }
 
