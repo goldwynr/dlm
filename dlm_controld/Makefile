@@ -19,7 +19,9 @@ LIB_TARGET = $(LIB_SO).$(LIB_MAJOR).$(LIB_MINOR)
 
 BIN_SOURCE = action.c \
              cpg.c \
+             daemon_cpg.c \
              crc.c \
+             fence_config.c \
              fence.c \
              main.c \
              plock.c \
@@ -51,13 +53,10 @@ BIN_CFLAGS += -D_GNU_SOURCE -g \
 	-fdiagnostics-show-option \
 
 BIN_CFLAGS += -fPIE -DPIE
-BIN_CFLAGS += `xml2-config --cflags`
 BIN_CFLAGS += -I../include -I../libdlm
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
-BIN_LDFLAGS += `xml2-config --libs`
 BIN_LDFLAGS += -lpthread -lrt -lcpg -lcmap -lcfg -lquorum
-#BIN_LDFLAGS += -lfenced
 
 LIB_CFLAGS += $(BIN_CFLAGS)
 LIB_LDFLAGS += -Wl,-z,relro -pie

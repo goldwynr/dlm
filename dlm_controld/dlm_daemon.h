@@ -9,16 +9,18 @@
 #ifndef __DLM_DAEMON_DOT_H__
 #define __DLM_DAEMON_DOT_H__
 
-#include <sys/types.h>
 #include <asm/types.h>
+#include <sys/types.h>
 #include <sys/uio.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/poll.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -37,7 +39,6 @@
 #include <syslog.h>
 #include <sched.h>
 #include <signal.h>
-#include <sys/time.h>
 #include <dirent.h>
 
 #include <corosync/cpg.h>
@@ -45,6 +46,7 @@
 #include <linux/dlmconstants.h>
 #include "libdlmcontrol.h"
 #include "dlm_controld.h"
+#include "fence_config.h"
 #include "list.h"
 #include "rbtree.h"
 #include "linux_endian.h"
@@ -60,9 +62,9 @@
 
 /* TODO: get CONFDIR, LOGDIR, RUNDIR from build */
 
-#define RUNDIR                   "/var/run/cluster"
-#define LOGDIR                   "/var/log/cluster"
-#define CONFDIR                  "/etc"
+#define RUNDIR                   "/var/run/dlm"
+#define LOGDIR                   "/var/log/dlm"
+#define CONFDIR                  "/etc/dlm"
 
 #define RUN_FILE_NAME            "dlm_controld.pid"
 #define LOG_FILE_NAME            "dlm_controld.log"
@@ -80,7 +82,8 @@
 
 #define DEFAULT_DEBUG_LOGFILE 0
 #define DEFAULT_ENABLE_FENCING 1
-#define DEFAULT_ENABLE_QUORUM 0
+#define DEFAULT_ENABLE_QUORUM_FENCING 1
+#define DEFAULT_ENABLE_QUORUM_LOCKSPACE 0
 #define DEFAULT_ENABLE_FSCONTROL 0
 #define DEFAULT_ENABLE_PLOCK 1
 #define DEFAULT_PLOCK_DEBUG 0
@@ -89,6 +92,8 @@
 #define DEFAULT_DROP_RESOURCES_TIME 10000 /* 10 sec */
 #define DEFAULT_DROP_RESOURCES_COUNT 10
 #define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
+#define DEFAULT_FENCE_ALL_AGENT "dlm_stonith"
+#define DEFAULT_STARTUP_FENCE 30
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -118,9 +123,8 @@
 EXTERN int daemon_debug_opt;
 EXTERN int daemon_quit;
 EXTERN int cluster_down;
-EXTERN int poll_ringid;
+EXTERN int poll_lockspaces;
 EXTERN int poll_fencing;
-EXTERN int poll_quorum;
 EXTERN int poll_fs;
 EXTERN int poll_ignore_plock;
 EXTERN int poll_drop_plock;
@@ -128,20 +132,24 @@ EXTERN int plock_fd;
 EXTERN int plock_ci;
 EXTERN struct list_head lockspaces;
 EXTERN int cluster_quorate;
-EXTERN uint64_t quorate_time;
+EXTERN uint64_t cluster_quorate_monotime;
+EXTERN uint64_t cluster_joined_monotime;
+EXTERN uint64_t cluster_joined_walltime;
 EXTERN uint32_t cluster_ringid_seq;
 EXTERN char cluster_name[DLM_LOCKSPACE_LEN+1];
 EXTERN int our_nodeid;
 EXTERN uint32_t control_minor;
 EXTERN uint32_t monitor_minor;
 EXTERN uint32_t plock_minor;
+EXTERN struct fence_device fence_all_device;
 
 EXTERN int optk_debug;
 EXTERN int optk_timewarn;
 EXTERN int optk_protocol;
 EXTERN int optd_debug_logfile;
 EXTERN int optd_enable_fencing;
-EXTERN int optd_enable_quorum;
+EXTERN int optd_enable_quorum_fencing;
+EXTERN int optd_enable_quorum_lockspace;
 EXTERN int optd_enable_fscontrol;
 EXTERN int optd_enable_plock;
 EXTERN int optd_plock_debug;
@@ -150,13 +158,16 @@ EXTERN int optd_plock_ownership;
 EXTERN int optd_drop_resources_time;
 EXTERN int optd_drop_resources_count;
 EXTERN int optd_drop_resources_age;
+EXTERN int optd_startup_fence;
+EXTERN int optd_fence_all_agent;
 
 EXTERN int cfgk_debug;
 EXTERN int cfgk_timewarn;
 EXTERN int cfgk_protocol;
 EXTERN int cfgd_debug_logfile;
 EXTERN int cfgd_enable_fencing;
-EXTERN int cfgd_enable_quorum;
+EXTERN int cfgd_enable_quorum_fencing;
+EXTERN int cfgd_enable_quorum_lockspace;
 EXTERN int cfgd_enable_fscontrol;
 EXTERN int cfgd_enable_plock;
 EXTERN int cfgd_plock_debug;
@@ -165,6 +176,8 @@ EXTERN int cfgd_plock_ownership;
 EXTERN int cfgd_drop_resources_time;
 EXTERN int cfgd_drop_resources_count;
 EXTERN int cfgd_drop_resources_age;
+EXTERN int cfgd_startup_fence;
+EXTERN char fence_all_agent[PATH_MAX];
 
 #define LOG_DUMP_SIZE DLMC_DUMP_SIZE
 
@@ -194,7 +207,9 @@ enum {
 	DLM_MSG_DEADLK_CYCLE_START,
 	DLM_MSG_DEADLK_CYCLE_END,
 	DLM_MSG_DEADLK_CHECKPOINT_READY,
-	DLM_MSG_DEADLK_CANCEL_LOCK
+	DLM_MSG_DEADLK_CANCEL_LOCK,
+	DLM_MSG_FENCE_RESULT,
+	DLM_MSG_FENCE_CLEAR,
 };
 
 /* dlm_header flags */
@@ -288,15 +303,10 @@ void setup_config(int update);
 int get_weight(int nodeid, char *lockspace);
 
 /* cpg.c */
-int setup_cpg_daemon(void);
-void close_cpg_daemon(void);
-void process_cpg_daemon(int ci);
-int set_protocol(void);
 void process_lockspace_changes(void);
-void dlm_send_message(struct lockspace *ls, char *buf, int len);
+void process_fencing_changes(void);
 int dlm_join_lockspace(struct lockspace *ls);
 int dlm_leave_lockspace(struct lockspace *ls);
-const char *msg_name(int type);
 void update_flow_control_status(void);
 int set_node_info(struct lockspace *ls, int nodeid, struct dlmc_node *node);
 int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace);
@@ -304,6 +314,36 @@ int set_lockspaces(int *count, struct dlmc_lockspace **lss_out);
 int set_lockspace_nodes(struct lockspace *ls, int option, int *node_count,
 			struct dlmc_node **nodes_out);
 int set_fs_notified(struct lockspace *ls, int nodeid);
+
+/* daemon_cpg.c */
+void init_daemon(void);
+void fence_ack_node(int nodeid);
+void add_startup_node(int nodeid);
+const char *reason_str(int reason);
+const char *msg_name(int type);
+void dlm_send_message(struct lockspace *ls, char *buf, int len);
+void dlm_header_in(struct dlm_header *hd);
+int dlm_header_validate(struct dlm_header *hd, int nodeid);
+int fence_node_time(int nodeid, uint64_t *last_fenced);
+int fence_in_progress(int *in_progress);
+int setup_cpg_daemon(void);
+void close_cpg_daemon(void);
+void process_cpg_daemon(int ci);
+void set_protocol_stateful(void);
+int set_protocol(void);
+
+void log_config(const struct cpg_name *group_name,
+                const struct cpg_address *member_list,
+                size_t member_list_entries,
+                const struct cpg_address *left_list,
+                size_t left_list_entries,
+                const struct cpg_address *joined_list,
+                size_t joined_list_entries);
+
+void log_ringid(const char *name,
+                struct cpg_ring_id *ringid,
+                const uint32_t *member_list,
+                size_t member_list_entries);
 
 /* deadlock.c */
 void setup_deadlock(void);
@@ -346,11 +386,12 @@ int setup_cluster_cfg(void);
 void close_cluster_cfg(void);
 void process_cluster_cfg(int ci);
 void kick_node_from_cluster(int nodeid);
+int setup_node_config(void);
 
 /* fence.c */
-int fence_request(int nodeid);
-int fence_node_time(int nodeid, uint64_t *last_fenced_time);
-int fence_in_progress(int *count);
+int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
+                  struct fence_config *fc, int *pid_out);
+int fence_result(int nodeid, int pid, int *result);
 
 /* netlink.c */
 int setup_netlink(void);

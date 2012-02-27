@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2011 Red Hat, Inc.
+ * Copyright 2004-2012 Red Hat, Inc.
  *
  * This copyrighted material is made available to anyone wishing to use,
  * modify, copy, or redistribute it subject to the terms and conditions
@@ -7,49 +7,6 @@
  */
 
 #include "dlm_daemon.h"
-
-#define PV_STATEFUL 0x0001
-
-struct protocol_version {
-	uint16_t major;
-	uint16_t minor;
-	uint16_t patch;
-	uint16_t flags;
-};
-
-struct protocol {
-	union {
-		struct protocol_version dm_ver;
-		uint16_t                daemon_max[4];
-	};
-	union {
-		struct protocol_version km_ver;
-		uint16_t                kernel_max[4];
-	};
-	union {
-		struct protocol_version dr_ver;
-		uint16_t                daemon_run[4];
-	};
-	union {
-		struct protocol_version kr_ver;
-		uint16_t                kernel_run[4];
-	};
-};
-
-/* per dlm_controld cpg: daemon_nodes */
-
-struct node_daemon {
-	struct list_head list;
-	int nodeid;
-
-	uint64_t daemon_add_time;
-	uint64_t daemon_rem_time;
-	int daemon_member;
-
-	int killed;
-
-	struct protocol proto;
-};
 
 /* per lockspace cpg: ls->node_history */
 
@@ -71,11 +28,10 @@ struct node {
 	int check_fs;
 	int fs_notified;
 
-	int request_fencing;
-	int check_fencing;
-	uint64_t fail_realtime;
-	uint64_t fence_realtime;
+	int need_fencing;
 	uint32_t fence_queries;	/* for debug */
+	uint64_t fail_walltime;
+	uint64_t fail_monotime;
 };
 
 /* per lockspace confchg: ls->changes */
@@ -127,93 +83,6 @@ struct id_info {
 	int nodeid;
 };
 
-int message_flow_control_on;
-static cpg_handle_t cpg_handle_daemon;
-static int cpg_fd_daemon;
-static struct protocol our_protocol;
-static struct list_head daemon_nodes;
-static struct cpg_address daemon_member[MAX_NODES];
-static int daemon_member_count;
-
-static void log_config(const struct cpg_name *group_name,
-		       const struct cpg_address *member_list,
-		       size_t member_list_entries,
-		       const struct cpg_address *left_list,
-		       size_t left_list_entries,
-		       const struct cpg_address *joined_list,
-		       size_t joined_list_entries)
-{
-	char m_buf[128];
-	char j_buf[32];
-	char l_buf[32];
-	size_t i, len, pos;
-	int ret;
-
-	memset(m_buf, 0, sizeof(m_buf));
-	memset(j_buf, 0, sizeof(j_buf));
-	memset(l_buf, 0, sizeof(l_buf));
-
-	len = sizeof(m_buf);
-	pos = 0;
-	for (i = 0; i < member_list_entries; i++) {
-		ret = snprintf(m_buf + pos, len - pos, " %d",
-			       member_list[i].nodeid);
-		if (ret >= len - pos)
-			break;
-		pos += ret;
-	}
-
-	len = sizeof(j_buf);
-	pos = 0;
-	for (i = 0; i < joined_list_entries; i++) {
-		ret = snprintf(j_buf + pos, len - pos, " %d",
-			       joined_list[i].nodeid);
-		if (ret >= len - pos)
-			break;
-		pos += ret;
-	}
-
-	len = sizeof(l_buf);
-	pos = 0;
-	for (i = 0; i < left_list_entries; i++) {
-		ret = snprintf(l_buf + pos, len - pos, " %d",
-			       left_list[i].nodeid);
-		if (ret >= len - pos)
-			break;
-		pos += ret;
-	}
-
-	log_debug("%s conf %zu %zu %zu memb%s join%s left%s", group_name->value,
-		  member_list_entries, joined_list_entries, left_list_entries,
-		  m_buf, j_buf, l_buf);
-}
-
-static void log_ringid(const char *name,
-                       struct cpg_ring_id *ringid,
-                       const uint32_t *member_list,
-                       size_t member_list_entries)
-{
-	char m_buf[128];
-	size_t i, len, pos;
-	int ret;
-
-	memset(m_buf, 0, sizeof(m_buf));
-
-	len = sizeof(m_buf);
-	pos = 0;
-	for (i = 0; i < member_list_entries; i++) {
-		ret = snprintf(m_buf + pos, len - pos, " %u",
-			       member_list[i]);
-		if (ret >= len - pos)
-			break;
-		pos += ret;
-	}
-
-	log_debug("%s ring %u:%llu %zu memb%s",
-		  name, ringid->nodeid, (unsigned long long)ringid->seq,
-		  member_list_entries, m_buf);
-}
-
 static void ls_info_in(struct ls_info *li)
 {
 	li->ls_info_size  = le32_to_cpu(li->ls_info_size);
@@ -241,93 +110,6 @@ static void ids_in(struct ls_info *li, struct id_info *ids)
 		id_info_in(id);
 		id = (struct id_info *)((char *)id + li->id_info_size);
 	}
-}
-
-const char *msg_name(int type)
-{
-	switch (type) {
-	case DLM_MSG_PROTOCOL:
-		return "protocol";
-	case DLM_MSG_START:
-		return "start";
-	case DLM_MSG_PLOCK:
-		return "plock";
-	case DLM_MSG_PLOCK_OWN:
-		return "plock_own";
-	case DLM_MSG_PLOCK_DROP:
-		return "plock_drop";
-	case DLM_MSG_PLOCK_SYNC_LOCK:
-		return "plock_sync_lock";
-	case DLM_MSG_PLOCK_SYNC_WAITER:
-		return "plock_sync_waiter";
-	case DLM_MSG_PLOCKS_DATA:
-		return "plocks_data";
-	case DLM_MSG_PLOCKS_DONE:
-		return "plocks_done";
-	case DLM_MSG_DEADLK_CYCLE_START:
-		return "deadlk_cycle_start";
-	case DLM_MSG_DEADLK_CYCLE_END:
-		return "deadlk_cycle_end";
-	case DLM_MSG_DEADLK_CHECKPOINT_READY:
-		return "deadlk_checkpoint_ready";
-	case DLM_MSG_DEADLK_CANCEL_LOCK:
-		return "deadlk_cancel_lock";
-	default:
-		return "unknown";
-	}
-}
-
-static int _send_message(cpg_handle_t h, void *buf, int len, int type)
-{
-	struct iovec iov;
-	cs_error_t error;
-	int retries = 0;
-
-	iov.iov_base = buf;
-	iov.iov_len = len;
-
- retry:
-	error = cpg_mcast_joined(h, CPG_TYPE_AGREED, &iov, 1);
-	if (error == CS_ERR_TRY_AGAIN) {
-		retries++;
-		usleep(1000);
-		if (!(retries % 100))
-			log_error("cpg_mcast_joined retry %d %s",
-				   retries, msg_name(type));
-		goto retry;
-	}
-	if (error != CS_OK) {
-		log_error("cpg_mcast_joined error %d handle %llx %s",
-			  error, (unsigned long long)h, msg_name(type));
-		return -1;
-	}
-
-	if (retries)
-		log_debug("cpg_mcast_joined retried %d %s",
-			  retries, msg_name(type));
-
-	return 0;
-}
-
-/* header fields caller needs to set: type, to_nodeid, flags, msgdata */
-
-void dlm_send_message(struct lockspace *ls, char *buf, int len)
-{
-	struct dlm_header *hd = (struct dlm_header *) buf;
-	int type = hd->type;
-
-	hd->version[0]  = cpu_to_le16(our_protocol.daemon_run[0]);
-	hd->version[1]  = cpu_to_le16(our_protocol.daemon_run[1]);
-	hd->version[2]  = cpu_to_le16(our_protocol.daemon_run[2]);
-	hd->type	= cpu_to_le16(hd->type);
-	hd->nodeid      = cpu_to_le32(our_nodeid);
-	hd->to_nodeid   = cpu_to_le32(hd->to_nodeid);
-	hd->global_id   = cpu_to_le32(ls->global_id);
-	hd->flags       = cpu_to_le32(hd->flags);
-	hd->msgdata     = cpu_to_le32(hd->msgdata);
-	hd->msgdata2    = cpu_to_le32(hd->msgdata2);
-
-	_send_message(ls->cpg_handle, buf, len, type);
 }
 
 static struct member *find_memb(struct change *cg, int nodeid)
@@ -424,7 +206,7 @@ static void free_ls(struct lockspace *ls)
    For 1:
    - node X fails
    - we see node X fail and X has non-zero start_time,
-     set check_fencing and record the fail time
+     set need_fencing and record the fail time
    - wait for X to be removed from all dlm cpg's  (probably not necessary)
    - check that the fencing time is later than the recorded time above
 
@@ -442,8 +224,8 @@ static void free_ls(struct lockspace *ls)
    when we see a node not in this list, add entry for it with zero start_time
    record the time we get a good start message from the node, start_time
    clear start_time if the node leaves
-   if node fails with non-zero start_time, set check_fencing
-   when a node is fenced, clear start_time and clear check_fencing
+   if node fails with non-zero start_time, set need_fencing
+   when a node is fenced, clear start_time and clear need_fencing
    if a node remerges after this, no good start message, no new start_time set
    if a node fails with zero start_time, it doesn't need fencing
    if a node remerges before it's been fenced, no good start message, no new
@@ -526,9 +308,7 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 	}
 
 	if (cfgd_enable_fencing && node->start_time) {
-		node->request_fencing = 1;
-		node->check_fencing = 1;
-		node->fence_realtime = 0;
+		node->need_fencing = 1;
 		node->fence_queries = 0;
 	}
 
@@ -543,7 +323,9 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 	node->lockspace_fail_time = now;
 	node->lockspace_fail_seq = node->lockspace_rem_seq;
 	node->lockspace_fail_reason = reason;	/* for queries */
-	node->fail_realtime = time(NULL);
+
+	node->fail_monotime = now;
+	node->fail_walltime = time(NULL);
 }
 
 static void node_history_start(struct lockspace *ls, int nodeid)
@@ -601,9 +383,9 @@ static int check_ringid_done(struct lockspace *ls)
 static int check_fencing_done(struct lockspace *ls)
 {
 	struct node *node;
-	uint64_t last_fenced_time;
-	int in_progress, wait_count = 0;
-	int rv;
+	uint64_t fence_monotime;
+	int wait_count = 0;
+	int rv, in_progress;
 
 	if (!cfgd_enable_fencing) {
 		log_group(ls, "check_fencing disabled");
@@ -611,47 +393,35 @@ static int check_fencing_done(struct lockspace *ls)
 	}
 
 	list_for_each_entry(node, &ls->node_history, list) {
-		if (!node->check_fencing)
+		if (!node->need_fencing)
 			continue;
 
-		/* check with fenced to see if the node has been
-		   fenced since node->start_time */
-
-		rv = fence_node_time(node->nodeid, &last_fenced_time);
+		rv = fence_node_time(node->nodeid, &fence_monotime);
 		if (rv < 0) {
 			log_error("fenced_node_time error %d", rv);
 			continue;
 		}
 
-		/* fenced gives us real time */
-
-		/* need >= not just > because in at least one case
-		   we've seen fenced_time within the same second as
-		   fail_time: with external fencing, e.g. fence_node */
-
-		if (last_fenced_time >= node->fail_realtime) {
-			log_group(ls, "check_fencing %d done "
-				  "start %llu fail %llu last %llu",
+		if (fence_monotime >= node->fail_monotime) {
+			log_group(ls, "check_fencing %d done start %llu fail %llu fence %llu",
 				  node->nodeid,
 				  (unsigned long long)node->start_time,
-				  (unsigned long long)node->fail_realtime,
-				  (unsigned long long)last_fenced_time);
-			node->check_fencing = 0;
+				  (unsigned long long)node->fail_monotime,
+				  (unsigned long long)fence_monotime);
+
+			node->need_fencing = 0;
 			node->start_time = 0;
-			node->fence_realtime = last_fenced_time;
+			continue;
 		} else {
-			if (!node->fence_queries ||
-			    node->fence_realtime != last_fenced_time) {
-				log_group(ls, "check_fencing %d wait "
-					  "start %llu fail %llu last %llu",
+			if (!node->fence_queries) {
+				log_group(ls, "check_fencing %d wait start %llu fail %llu",
 					  node->nodeid,
 					 (unsigned long long)node->start_time,
-					 (unsigned long long)node->fail_realtime,
-					 (unsigned long long)last_fenced_time);
+					 (unsigned long long)node->fail_monotime);
 				node->fence_queries++;
-				node->fence_realtime = last_fenced_time;
 			}
 			wait_count++;
+			continue;
 		}
 	}
 
@@ -677,39 +447,6 @@ static int check_fencing_done(struct lockspace *ls)
 
 	log_group(ls, "check_fencing done");
 	return 1;
-}
-
-static int need_fencing(struct lockspace *ls)
-{
-	struct node *node;
-
-	list_for_each_entry(node, &ls->node_history, list) {
-		if (node->check_fencing) {
-			log_group(ls, "need_fencing %d", node->nodeid);
-			return 1;
-		}
-	}
-	return 0;
-}
-
-/* we don't need to ask fenced to initiate fencing; it does
-   so itself when it sees a fence domain member fail.  Without
-   fenced we'll probably need to ask another daemon to initiate
-   fencing, then check with it above, like we check libfenced. */
-
-static void request_fencing(struct lockspace *ls)
-{
-	struct node *node;
-	int rv;
-
-	list_for_each_entry(node, &ls->node_history, list) {
-		if (!node->request_fencing)
-			continue;
-		log_group(ls, "fence_request %d", node->nodeid);
-		rv = fence_request(node->nodeid);
-		if (!rv)
-			node->request_fencing = 0;
-	}
 }
 
 /* wait for local fs_controld to ack each failed node */
@@ -839,43 +576,18 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
 /* we know that the cluster_quorate value here is consistent with the cpg events
    because the ringid's are in sync per the check_ringid_done */
 
-/*
-   enable_quorum = 0
-	Never wait for quorum here.
-
-   enable_quorum = 1
-	Wait for quorum before calling request_fencing() in cases where
-	fencing is needed.  Reason for using this would be if fencing
-	system doesn't wait for quorum before carrying out a fencing
-	request, and we want to avoid having partitioned inquorate nodes
-	fencing quorate nodes in another partition.
-	   
-   enable_quorum = 2
-	Always wait for quorum as a general condition here. This
-	means that lockspace join/leave operations would block waiting
-	for quorum.  There's not any reason to do this per se, unless
-	that's the behavior the application using the dlm wants.
-*/
-
 static int wait_conditions_done(struct lockspace *ls)
 {
 	if (!check_ringid_done(ls))
 		return 0;
 
-	if ((cfgd_enable_quorum > 1) && !cluster_quorate) {
+	if ((cfgd_enable_quorum_lockspace > 1) && !cluster_quorate) {
 		log_group(ls, "wait for quorum");
 		return 0;
 	}
 
-	if ((cfgd_enable_quorum > 0) && need_fencing(ls) && !cluster_quorate) {
-		log_group(ls, "wait for quorum before fencing");
-		return 0;
-	}
-
-	request_fencing(ls);
-
 	if (!check_fencing_done(ls)) {
-		poll_fencing++;
+		poll_lockspaces++;
 		return 0;
 	}
 
@@ -1437,7 +1149,7 @@ static void apply_changes(struct lockspace *ls)
 
 	case CGST_WAIT_MESSAGES:
 		if (wait_messages_done(ls)) {
-			our_protocol.dr_ver.flags |= PV_STATEFUL;
+			set_protocol_stateful();
 			start_kernel(ls);
 			prepare_plocks(ls);
 			cleanup_changes(ls);
@@ -1453,33 +1165,13 @@ void process_lockspace_changes(void)
 {
 	struct lockspace *ls, *safe;
 
-	poll_ringid = 0;
-	poll_fencing = 0;
-	poll_quorum = 0;
+	poll_lockspaces = 0;
 	poll_fs = 0;
 
 	list_for_each_entry_safe(ls, safe, &lockspaces, list) {
 		if (!list_empty(&ls->changes))
 			apply_changes(ls);
 	}
-}
-
-static const char *reason_str(int reason)
-{
-	switch (reason) {
-	case CPG_REASON_JOIN:
-		return "join";
-	case CPG_REASON_LEAVE:
-		return "leave";
-	case CPG_REASON_NODEDOWN:
-		return "nodedown";
-	case CPG_REASON_NODEUP:
-		return "nodeup";
-	case CPG_REASON_PROCDOWN:
-		return "procdown";
-	default:
-		return "unknown";
-	};
 }
 
 static int add_change(struct lockspace *ls,
@@ -1665,20 +1357,6 @@ static void confchg_cb(cpg_handle_t handle,
 #endif
 }
 
-static void dlm_header_in(struct dlm_header *hd)
-{
-	hd->version[0]  = le16_to_cpu(hd->version[0]);
-	hd->version[1]  = le16_to_cpu(hd->version[1]);
-	hd->version[2]  = le16_to_cpu(hd->version[2]);
-	hd->type        = le16_to_cpu(hd->type);
-	hd->nodeid      = le32_to_cpu(hd->nodeid);
-	hd->to_nodeid   = le32_to_cpu(hd->to_nodeid);
-	hd->global_id   = le32_to_cpu(hd->global_id);
-	hd->flags       = le32_to_cpu(hd->flags);
-	hd->msgdata     = le32_to_cpu(hd->msgdata);
-	hd->msgdata2    = le32_to_cpu(hd->msgdata2);
-}
-
 /* after our join confchg, we want to ignore plock messages (see need_plocks
    checks below) until the point in time where the ckpt_node saves plock
    state (final start message received); at this time we want to shift from
@@ -1693,6 +1371,7 @@ static void deliver_cb(cpg_handle_t handle,
 	struct lockspace *ls;
 	struct dlm_header *hd;
 	int ignore_plock;
+	int rv;
 
 	ls = find_ls_handle(handle);
 	if (!ls) {
@@ -1700,7 +1379,7 @@ static void deliver_cb(cpg_handle_t handle,
 		return;
 	}
 
-	if (len < sizeof(*hd)) {
+	if (len < sizeof(struct dlm_header)) {
 		log_error("deliver_cb short message %zd", len);
 		return;
 	}
@@ -1708,20 +1387,9 @@ static void deliver_cb(cpg_handle_t handle,
 	hd = (struct dlm_header *)data;
 	dlm_header_in(hd);
 
-	if (hd->version[0] != our_protocol.daemon_run[0] ||
-	    hd->version[1] != our_protocol.daemon_run[1]) {
-		log_error("reject message from %d version %u.%u.%u vs %u.%u.%u",
-			  nodeid, hd->version[0], hd->version[1],
-			  hd->version[2], our_protocol.daemon_run[0],
-			  our_protocol.daemon_run[1],
-			  our_protocol.daemon_run[2]);
+	rv = dlm_header_validate(hd, nodeid);
+	if (rv < 0)
 		return;
-	}
-
-	if (hd->nodeid != nodeid) {
-		log_error("bad msg nodeid %d %d", hd->nodeid, nodeid);
-		return;
-	}
 
 	ignore_plock = 0;
 
@@ -1892,31 +1560,6 @@ static cpg_model_v1_data_t cpg_callbacks = {
 	.flags = CPG_MODEL_V1_DELIVER_INITIAL_TOTEM_CONF,
 };
 
-void update_flow_control_status(void)
-{
-	cpg_flow_control_state_t flow_control_state;
-	cs_error_t error;
-
-	error = cpg_flow_control_state_get(cpg_handle_daemon,
-					   &flow_control_state);
-	if (error != CS_OK) {
-		log_error("cpg_flow_control_state_get %d", error);
-		return;
-	}
-
-	if (flow_control_state == CPG_FLOW_CONTROL_ENABLED) {
-		if (message_flow_control_on == 0) {
-			log_debug("flow control on");
-		}
-		message_flow_control_on = 1;
-	} else {
-		if (message_flow_control_on) {
-			log_debug("flow control off");
-		}
-		message_flow_control_on = 0;
-	}
-}
-
 static void process_cpg_lockspace(int ci)
 {
 	struct lockspace *ls;
@@ -1933,8 +1576,6 @@ static void process_cpg_lockspace(int ci)
 		log_error("cpg_dispatch error %d", error);
 		return;
 	}
-
-	update_flow_control_status();
 }
 
 /* received an "online" uevent from dlm-kernel */
@@ -1945,14 +1586,6 @@ int dlm_join_lockspace(struct lockspace *ls)
 	cpg_handle_t h;
 	struct cpg_name name;
 	int i = 0, fd, ci, rv;
-	int unused;
-
-	rv = fence_in_progress(&unused);
-	if (cfgd_enable_fencing && rv < 0) {
-		log_error("dlm_join_lockspace no fence domain");
-		rv = -1;
-		goto fail_free;
-	}
 
 	error = cpg_model_initialize(&h, CPG_MODEL_V1,
 				     (cpg_model_data_t *)&cpg_callbacks, NULL);
@@ -2038,645 +1671,6 @@ int dlm_leave_lockspace(struct lockspace *ls)
 	return 0;
 }
 
-static struct node_daemon *get_node_daemon(int nodeid)
-{
-	struct node_daemon *node;
-
-	list_for_each_entry(node, &daemon_nodes, list) {
-		if (node->nodeid == nodeid)
-			return node;
-	}
-	return NULL;
-}
-
-static void add_node_daemon(int nodeid)
-{
-	struct node_daemon *node;
-
-	if (get_node_daemon(nodeid))
-		return;
-
-	node = malloc(sizeof(struct node_daemon));
-	if (!node) {
-		log_error("add_node_daemon no mem");
-		return;
-	}
-	memset(node, 0, sizeof(struct node_daemon));
-	node->nodeid = nodeid;
-	list_add_tail(&node->list, &daemon_nodes);
-}
-
-static void pv_in(struct protocol_version *pv)
-{
-	pv->major = le16_to_cpu(pv->major);
-	pv->minor = le16_to_cpu(pv->minor);
-	pv->patch = le16_to_cpu(pv->patch);
-	pv->flags = le16_to_cpu(pv->flags);
-}
-
-static void pv_out(struct protocol_version *pv)
-{
-	pv->major = cpu_to_le16(pv->major);
-	pv->minor = cpu_to_le16(pv->minor);
-	pv->patch = cpu_to_le16(pv->patch);
-	pv->flags = cpu_to_le16(pv->flags);
-}
-
-static void protocol_in(struct protocol *proto)
-{
-	pv_in(&proto->dm_ver);
-	pv_in(&proto->km_ver);
-	pv_in(&proto->dr_ver);
-	pv_in(&proto->kr_ver);
-}
-
-static void protocol_out(struct protocol *proto)
-{
-	pv_out(&proto->dm_ver);
-	pv_out(&proto->km_ver);
-	pv_out(&proto->dr_ver);
-	pv_out(&proto->kr_ver);
-}
-
-/* go through member list saved in last confchg, see if we have received a
-   proto message from each */
-
-static int all_protocol_messages(void)
-{
-	struct node_daemon *node;
-	int i;
-
-	if (!daemon_member_count)
-		return 0;
-
-	for (i = 0; i < daemon_member_count; i++) {
-		node = get_node_daemon(daemon_member[i].nodeid);
-		if (!node) {
-			log_error("all_protocol_messages no node %d",
-				  daemon_member[i].nodeid);
-			return 0;
-		}
-
-		if (!node->proto.daemon_max[0])
-			return 0;
-	}
-	return 1;
-}
-
-static int pick_min_protocol(struct protocol *proto)
-{
-	uint16_t mind[4];
-	uint16_t mink[4];
-	struct node_daemon *node;
-	int i;
-
-	memset(&mind, 0, sizeof(mind));
-	memset(&mink, 0, sizeof(mink));
-
-	/* first choose the minimum major */
-
-	for (i = 0; i < daemon_member_count; i++) {
-		node = get_node_daemon(daemon_member[i].nodeid);
-		if (!node) {
-			log_error("pick_min_protocol no node %d",
-				  daemon_member[i].nodeid);
-			return -1;
-		}
-
-		if (!mind[0] || node->proto.daemon_max[0] < mind[0])
-			mind[0] = node->proto.daemon_max[0];
-
-		if (!mink[0] || node->proto.kernel_max[0] < mink[0])
-			mink[0] = node->proto.kernel_max[0];
-	}
-
-	if (!mind[0] || !mink[0]) {
-		log_error("pick_min_protocol zero major number");
-		return -1;
-	}
-
-	/* second pick the minimum minor with the chosen major */
-
-	for (i = 0; i < daemon_member_count; i++) {
-		node = get_node_daemon(daemon_member[i].nodeid);
-		if (!node)
-			continue;
-
-		if (mind[0] == node->proto.daemon_max[0]) {
-			if (!mind[1] || node->proto.daemon_max[1] < mind[1])
-				mind[1] = node->proto.daemon_max[1];
-		}
-
-		if (mink[0] == node->proto.kernel_max[0]) {
-			if (!mink[1] || node->proto.kernel_max[1] < mink[1])
-				mink[1] = node->proto.kernel_max[1];
-		}
-	}
-
-	if (!mind[1] || !mink[1]) {
-		log_error("pick_min_protocol zero minor number");
-		return -1;
-	}
-
-	/* third pick the minimum patch with the chosen major.minor */
-
-	for (i = 0; i < daemon_member_count; i++) {
-		node = get_node_daemon(daemon_member[i].nodeid);
-		if (!node)
-			continue;
-
-		if (mind[0] == node->proto.daemon_max[0] &&
-		    mind[1] == node->proto.daemon_max[1]) {
-			if (!mind[2] || node->proto.daemon_max[2] < mind[2])
-				mind[2] = node->proto.daemon_max[2];
-		}
-
-		if (mink[0] == node->proto.kernel_max[0] &&
-		    mink[1] == node->proto.kernel_max[1]) {
-			if (!mink[2] || node->proto.kernel_max[2] < mink[2])
-				mink[2] = node->proto.kernel_max[2];
-		}
-	}
-
-	if (!mind[2] || !mink[2]) {
-		log_error("pick_min_protocol zero patch number");
-		return -1;
-	}
-
-	memcpy(&proto->daemon_run, &mind, sizeof(mind));
-	memcpy(&proto->kernel_run, &mink, sizeof(mink));
-	return 0;
-}
-
-static void receive_protocol(struct dlm_header *hd, int len)
-{
-	struct protocol *p;
-	struct node_daemon *node;
-
-	p = (struct protocol *)((char *)hd + sizeof(struct dlm_header));
-	protocol_in(p);
-
-	if (len < sizeof(struct dlm_header) + sizeof(struct protocol)) {
-		log_error("receive_protocol invalid len %d from %d",
-			  len, hd->nodeid);
-		return;
-	}
-
-	/* zero is an invalid version value */
-
-	if (!p->daemon_max[0] || !p->daemon_max[1] || !p->daemon_max[2] ||
-	    !p->kernel_max[0] || !p->kernel_max[1] || !p->kernel_max[2]) {
-		log_error("receive_protocol invalid max value from %d "
-			  "daemon %u.%u.%u kernel %u.%u.%u", hd->nodeid,
-			  p->daemon_max[0], p->daemon_max[1], p->daemon_max[2],
-			  p->kernel_max[0], p->kernel_max[1], p->kernel_max[2]);
-		return;
-	}
-
-	/* the run values will be zero until a version is set, after
-	   which none of the run values can be zero */
-
-	if (p->daemon_run[0] && (!p->daemon_run[1] || !p->daemon_run[2] ||
-	    !p->kernel_run[0] || !p->kernel_run[1] || !p->kernel_run[2])) {
-		log_error("receive_protocol invalid run value from %d "
-			  "daemon %u.%u.%u kernel %u.%u.%u", hd->nodeid,
-			  p->daemon_run[0], p->daemon_run[1], p->daemon_run[2],
-			  p->kernel_run[0], p->kernel_run[1], p->kernel_run[2]);
-		return;
-	}
-
-	/* save this node's proto so we can tell when we've got all, and
-	   use it to select a minimum protocol from all */
-
-	node = get_node_daemon(hd->nodeid);
-	if (!node) {
-		log_error("receive_protocol no node %d", hd->nodeid);
-		return;
-	}
-
-	if (!node->daemon_member) {
-		log_error("receive_protocol node %d not member", hd->nodeid);
-		return;
-	}
-
-	log_debug("receive_protocol from %d max %u.%u.%u.%x run %u.%u.%u.%x",
-		  hd->nodeid,
-		  p->daemon_max[0], p->daemon_max[1],
-		  p->daemon_max[2], p->daemon_max[3],
-		  p->daemon_run[0], p->daemon_run[1],
-		  p->daemon_run[2], p->daemon_run[3]);
-	log_debug("daemon node %d max %u.%u.%u.%x run %u.%u.%u.%x",
-		  hd->nodeid,
-		  node->proto.daemon_max[0], node->proto.daemon_max[1],
-		  node->proto.daemon_max[2], node->proto.daemon_max[3],
-		  node->proto.daemon_run[0], node->proto.daemon_run[1],
-		  node->proto.daemon_run[2], node->proto.daemon_run[3]);
-	log_debug("daemon node %d join %llu left %llu local quorum %llu",
-		  hd->nodeid,
-		  (unsigned long long)node->daemon_add_time,
-		  (unsigned long long)node->daemon_rem_time,
-		  (unsigned long long)quorate_time);
-
-	/* checking zero node->daemon_max[0] is a way to tell if we've received
-	   an acceptable (non-stateful) proto message from the node since we
-	   saw it join the daemon cpg */
-
-	if (hd->nodeid != our_nodeid &&
-	    !node->proto.daemon_max[0] &&
-	    (p->dr_ver.flags & PV_STATEFUL) &&
-	    (our_protocol.dr_ver.flags & PV_STATEFUL)) {
-
-		log_debug("daemon node %d stateful merge", hd->nodeid);
-
-		if (cluster_quorate && node->daemon_rem_time &&
-		    quorate_time < node->daemon_rem_time) {
-			log_debug("daemon node %d kill due to stateful merge", hd->nodeid);
-			if (!node->killed)
-				kick_node_from_cluster(hd->nodeid);
-			node->killed = 1;
-		}
-
-		/* don't save p->proto into node->proto; we need to come
-		   through here based on zero daemon_max[0] for other proto
-		   messages like this one from the same node */
-
-		return;
-	}
-
-	memcpy(&node->proto, p, sizeof(struct protocol));
-
-	/* if we have zero run values, and this msg has non-zero run values,
-	   then adopt them as ours; otherwise save this proto message */
-
-	if (our_protocol.daemon_run[0])
-		return;
-
-	if (p->daemon_run[0]) {
-		our_protocol.daemon_run[0] = p->daemon_run[0];
-		our_protocol.daemon_run[1] = p->daemon_run[1];
-		our_protocol.daemon_run[2] = p->daemon_run[2];
-
-		our_protocol.kernel_run[0] = p->kernel_run[0];
-		our_protocol.kernel_run[1] = p->kernel_run[1];
-		our_protocol.kernel_run[2] = p->kernel_run[2];
-
-		log_debug("run protocol from nodeid %d", hd->nodeid);
-	}
-}
-
-static void send_protocol(struct protocol *proto)
-{
-	struct dlm_header *hd;
-	struct protocol *pr;
-	char *buf;
-	int len;
-
-	len = sizeof(struct dlm_header) + sizeof(struct protocol);
-	buf = malloc(len);
-	if (!buf) {
-		log_error("send_protocol no mem %d", len);
-		return;
-	}
-	memset(buf, 0, len);
-
-	hd = (struct dlm_header *)buf;
-	pr = (struct protocol *)(buf + sizeof(*hd));
-
-	hd->type = cpu_to_le16(DLM_MSG_PROTOCOL);
-	hd->nodeid = cpu_to_le32(our_nodeid);
-
-	memcpy(pr, proto, sizeof(struct protocol));
-	protocol_out(pr);
-
-	_send_message(cpg_handle_daemon, buf, len, DLM_MSG_PROTOCOL);
-}
-
-int set_protocol(void)
-{
-	struct protocol proto;
-	struct pollfd pollfd;
-	int sent_proposal = 0;
-	int rv;
-
-	memset(&pollfd, 0, sizeof(pollfd));
-	pollfd.fd = cpg_fd_daemon;
-	pollfd.events = POLLIN;
-
-	while (1) {
-		if (our_protocol.daemon_run[0])
-			break;
-
-		if (!sent_proposal && all_protocol_messages()) {
-			/* propose a protocol; look through info from all
-			   nodes and pick the min for both daemon and kernel,
-			   and propose that */
-
-			sent_proposal = 1;
-
-			/* copy our max values */
-			memcpy(&proto, &our_protocol, sizeof(struct protocol));
-
-			rv = pick_min_protocol(&proto);
-			if (rv < 0)
-				return rv;
-
-			log_debug("set_protocol member_count %d propose "
-				  "daemon %u.%u.%u kernel %u.%u.%u",
-				  daemon_member_count,
-				  proto.daemon_run[0], proto.daemon_run[1],
-				  proto.daemon_run[2], proto.kernel_run[0],
-				  proto.kernel_run[1], proto.kernel_run[2]);
-
-			send_protocol(&proto);
-		}
-
-		/* only process messages/events from daemon cpg until protocol
-		   is established */
-
-		rv = poll(&pollfd, 1, -1);
-		if (rv == -1 && errno == EINTR) {
-			if (daemon_quit)
-				return -1;
-			continue;
-		}
-		if (rv < 0) {
-			log_error("set_protocol poll errno %d", errno);
-			return -1;
-		}
-
-		if (pollfd.revents & POLLIN)
-			process_cpg_daemon(0);
-		if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-			log_error("set_protocol poll revents %u",
-				  pollfd.revents);
-			return -1;
-		}
-	}
-
-	if (our_protocol.daemon_run[0] != our_protocol.daemon_max[0] ||
-	    our_protocol.daemon_run[1] > our_protocol.daemon_max[1]) {
-		log_error("incompatible daemon protocol run %u.%u.%u max %u.%u.%u",
-			our_protocol.daemon_run[0],
-			our_protocol.daemon_run[1],
-			our_protocol.daemon_run[2],
-			our_protocol.daemon_max[0],
-			our_protocol.daemon_max[1],
-			our_protocol.daemon_max[2]);
-		return -1;
-	}
-
-	if (our_protocol.kernel_run[0] != our_protocol.kernel_max[0] ||
-	    our_protocol.kernel_run[1] > our_protocol.kernel_max[1]) {
-		log_error("incompatible kernel protocol run %u.%u.%u max %u.%u.%u",
-			our_protocol.kernel_run[0],
-			our_protocol.kernel_run[1],
-			our_protocol.kernel_run[2],
-			our_protocol.kernel_max[0],
-			our_protocol.kernel_max[1],
-			our_protocol.kernel_max[2]);
-		return -1;
-	}
-
-	log_debug("daemon run %u.%u.%u max %u.%u.%u "
-		  "kernel run %u.%u.%u max %u.%u.%u",
-		  our_protocol.daemon_run[0],
-		  our_protocol.daemon_run[1],
-		  our_protocol.daemon_run[2],
-		  our_protocol.daemon_max[0],
-		  our_protocol.daemon_max[1],
-		  our_protocol.daemon_max[2],
-		  our_protocol.kernel_run[0],
-		  our_protocol.kernel_run[1],
-		  our_protocol.kernel_run[2],
-		  our_protocol.kernel_max[0],
-		  our_protocol.kernel_max[1],
-		  our_protocol.kernel_max[2]);
-
-	send_protocol(&our_protocol);
-	return 0;
-}
-
-static void deliver_cb_daemon(cpg_handle_t handle,
-			      const struct cpg_name *group_name,
-			      uint32_t nodeid, uint32_t pid,
-			      void *data, size_t len)
-{
-	struct dlm_header *hd;
-
-	if (len < sizeof(*hd)) {
-		log_error("deliver_cb short message %zd", len);
-		return;
-	}
-
-	hd = (struct dlm_header *)data;
-	dlm_header_in(hd);
-
-	switch (hd->type) {
-	case DLM_MSG_PROTOCOL:
-		receive_protocol(hd, len);
-		break;
-	default:
-		log_error("deliver_cb_daemon unknown msg type %d", hd->type);
-	}
-}
-
-static int in_daemon_member_list(int nodeid)
-{
-	int i;
-
-	for (i = 0; i < daemon_member_count; i++) {
-		if (daemon_member[i].nodeid == nodeid)
-			return 1;
-	}
-	return 0;
-}
-
-static void confchg_cb_daemon(cpg_handle_t handle,
-			      const struct cpg_name *group_name,
-			      const struct cpg_address *member_list,
-			      size_t member_list_entries,
-			      const struct cpg_address *left_list,
-			      size_t left_list_entries,
-			      const struct cpg_address *joined_list,
-			      size_t joined_list_entries)
-{
-	struct node_daemon *node;
-	uint64_t now = monotime();
-	int nodedown = 0, procdown = 0, leave = 0;
-	int i;
-
-	log_config(group_name, member_list, member_list_entries,
-		   left_list, left_list_entries,
-		   joined_list, joined_list_entries);
-
-	for (i = 0; i < left_list_entries; i++) {
-		if (left_list[i].reason == CPG_REASON_NODEDOWN)
-			nodedown++;
-		else if (left_list[i].reason == CPG_REASON_PROCDOWN)
-			procdown++;
-		else if (left_list[i].reason == CPG_REASON_LEAVE)
-			leave++;
-	}
-
-	if (nodedown || procdown || leave)
-		log_debug("%s left nodedown %d procdown %d leave %d",
-			  group_name->value, nodedown, procdown, leave);
-
-	if (joined_list_entries)
-		send_protocol(&our_protocol);
-
-	memset(&daemon_member, 0, sizeof(daemon_member));
-	daemon_member_count = member_list_entries;
-
-	for (i = 0; i < member_list_entries; i++) {
-		daemon_member[i] = member_list[i];
-		/* add struct for nodes we've not seen before */
-		add_node_daemon(member_list[i].nodeid);
-	}
-
-	list_for_each_entry(node, &daemon_nodes, list) {
-		if (in_daemon_member_list(node->nodeid)) {
-			if (node->daemon_member)
-				continue;
-
-			/* node joined daemon cpg */
-			node->daemon_member = 1;
-			node->daemon_add_time = now;
-		} else {
-			if (!node->daemon_member)
-				continue;
-
-			/* node left daemon cpg */
-			node->daemon_member = 0;
-			node->killed = 0;
-			memset(&node->proto, 0, sizeof(struct protocol));
-			node->daemon_rem_time = now;
-		}
-	}
-}
-
-static void totem_cb_daemon(cpg_handle_t handle,
-                            struct cpg_ring_id ring_id,
-                            uint32_t member_list_entries,
-                            const uint32_t *member_list)
-{
-	log_ringid("dlm:controld", &ring_id, member_list, member_list_entries);
-}
-
-static cpg_model_v1_data_t cpg_callbacks_daemon = {
-	.cpg_deliver_fn = deliver_cb_daemon,
-	.cpg_confchg_fn = confchg_cb_daemon,
-	.cpg_totem_confchg_fn = totem_cb_daemon,
-	.flags = CPG_MODEL_V1_DELIVER_INITIAL_TOTEM_CONF,
-};
-
-void process_cpg_daemon(int ci)
-{
-	cs_error_t error;
-
-	error = cpg_dispatch(cpg_handle_daemon, CS_DISPATCH_ALL);
-	if (error != CS_OK)
-		log_error("daemon cpg_dispatch error %d", error);
-}
-
-int setup_cpg_daemon(void)
-{
-	cs_error_t error;
-	struct cpg_name name;
-	int i = 0;
-
-	INIT_LIST_HEAD(&daemon_nodes);
-
-	/* daemon 1.1.1 was cluster3/STABLE3/RHEL6 which is incompatible
-	   with cluster4/RHEL7 */ 
-
-	memset(&our_protocol, 0, sizeof(our_protocol));
-
-	if (cfgd_enable_fscontrol)
-		our_protocol.daemon_max[0] = 2;
-	else
-		our_protocol.daemon_max[0] = 3;
-
-	our_protocol.daemon_max[1] = 1;
-	our_protocol.daemon_max[2] = 1;
-	our_protocol.kernel_max[0] = 1;
-	our_protocol.kernel_max[1] = 1;
-	our_protocol.kernel_max[2] = 1;
-
-	error = cpg_model_initialize(&cpg_handle_daemon, CPG_MODEL_V1,
-				     (cpg_model_data_t *)&cpg_callbacks_daemon,
-				     NULL);
-	if (error != CS_OK) {
-		log_error("daemon cpg_initialize error %d", error);
-		return -1;
-	}
-
-	cpg_fd_get(cpg_handle_daemon, &cpg_fd_daemon);
-
-	memset(&name, 0, sizeof(name));
-	sprintf(name.value, "dlm:controld");
-	name.length = strlen(name.value) + 1;
-
-	log_debug("cpg_join %s ...", name.value);
- retry:
-	error = cpg_join(cpg_handle_daemon, &name);
-	if (error == CS_ERR_TRY_AGAIN) {
-		sleep(1);
-		if (!(++i % 10))
-			log_error("daemon cpg_join error retrying");
-		goto retry;
-	}
-	if (error != CS_OK) {
-		log_error("daemon cpg_join error %d", error);
-		goto fail;
-	}
-
-	log_debug("setup_cpg_daemon %d", cpg_fd_daemon);
-	return cpg_fd_daemon;
-
- fail:
-	cpg_finalize(cpg_handle_daemon);
-	return -1;
-}
-
-void close_cpg_daemon(void)
-{
-	struct lockspace *ls;
-	cs_error_t error;
-	struct cpg_name name;
-	int i = 0;
-
-	if (!cpg_handle_daemon)
-		return;
-	if (cluster_down)
-		goto fin;
-
-	memset(&name, 0, sizeof(name));
-	sprintf(name.value, "dlm:controld");
-	name.length = strlen(name.value) + 1;
-
-	log_debug("cpg_leave %s ...", name.value);
- retry:
-	error = cpg_leave(cpg_handle_daemon, &name);
-	if (error == CS_ERR_TRY_AGAIN) {
-		sleep(1);
-		if (!(++i % 10))
-			log_error("daemon cpg_leave error retrying");
-		goto retry;
-	}
-	if (error != CS_OK)
-		log_error("daemon cpg_leave error %d", error);
- fin:
-	list_for_each_entry(ls, &lockspaces, list) {
-		if (ls->cpg_handle)
-			cpg_finalize(ls->cpg_handle);
-	}
-	cpg_finalize(cpg_handle_daemon);
-}
-
-/* fs_controld has seen nodedown for nodeid; it's now ok for dlm to do
-   recovery for the failed node */
-
 int set_fs_notified(struct lockspace *ls, int nodeid)
 {
 	struct node *node;
@@ -2755,12 +1749,8 @@ int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace)
 
 	if (cg->state == CGST_WAIT_CONDITIONS)
 		lockspace->cg_next.wait_condition = 5;
-	if (poll_ringid)
-		lockspace->cg_next.wait_condition = 1;
 	else if (poll_fencing)
 		lockspace->cg_next.wait_condition = 2;
-	else if (poll_quorum)
-		lockspace->cg_next.wait_condition = 3;
 	else if (poll_fs)
 		lockspace->cg_next.wait_condition = 4;
 
@@ -2795,7 +1785,7 @@ static int _set_node_info(struct lockspace *ls, struct change *cg, int nodeid,
 	if (!n)
 		goto out;
 
-	if (n->check_fencing)
+	if (n->need_fencing)
 		node->flags |= DLMC_NF_CHECK_FENCING;
 	if (n->check_fs)
 		node->flags |= DLMC_NF_CHECK_FS;

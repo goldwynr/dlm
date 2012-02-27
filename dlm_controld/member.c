@@ -9,6 +9,7 @@
 #include "dlm_daemon.h"
 #include <corosync/corotypes.h>
 #include <corosync/cfg.h>
+#include <corosync/cmap.h>
 #include <corosync/quorum.h>
 
 static corosync_cfg_handle_t	ch;
@@ -111,8 +112,13 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	int i, j, num_addrs;
 	uint64_t now = monotime();
 
+	if (!cluster_joined_monotime) {
+		cluster_joined_monotime = now;
+		cluster_joined_walltime = time(NULL);
+	}
+
 	if (!cluster_quorate && quorate)
-		quorate_time = now;
+		cluster_quorate_monotime = now;
 
 	cluster_quorate = quorate;
 	cluster_ringid_seq = (uint32_t)ring_seq;
@@ -174,8 +180,10 @@ void process_cluster(int ci)
 	cs_error_t err;
 
 	err = quorum_dispatch(qh, CS_DISPATCH_ALL);
-	if (err != CS_OK)
+	if (err != CS_OK) {
+		log_error("process_cluster quorum_dispatch %d", err);
 		cluster_dead(0);
+	}
 }
 
 /* Force re-read of quorum nodes */
@@ -184,8 +192,10 @@ void update_cluster(void)
 	cs_error_t err;
 
 	err = quorum_dispatch(qh, CS_DISPATCH_ONE);
-	if (err != CS_OK)
+	if (err != CS_OK) {
+		log_error("update_cluster quorum_dispatch %d", err);
 		cluster_dead(0);
+	}
 }
 
 int setup_cluster(void)
@@ -272,8 +282,10 @@ void process_cluster_cfg(int ci)
 	cs_error_t err;
 
 	err = corosync_cfg_dispatch(ch, CS_DISPATCH_ALL);
-	if (err != CS_OK)
+	if (err != CS_OK) {
+		log_error("process_cluster_cfg cfg_dispatch %d", err);
 		cluster_dead(0);
+	}
 }
 
 int setup_cluster_cfg(void)
@@ -317,5 +329,36 @@ int setup_cluster_cfg(void)
 void close_cluster_cfg(void)
 {
 	corosync_cfg_finalize(ch);
+}
+
+int setup_node_config(void)
+{
+	char key[CMAP_KEYNAME_MAXLEN+1];
+	cmap_handle_t h;
+	cs_error_t err;
+	uint32_t nodeid;
+	int i;
+
+	err = cmap_initialize(&h);
+	if (err != CS_OK) {
+		log_error("corosync cmap init error %d", err);
+		return -1;
+	}
+
+	for (i = 0; i < MAX_NODES; i++) {
+		snprintf(key, CMAP_KEYNAME_MAXLEN, "nodelist.node.%d.nodeid", i);
+
+		err = cmap_get_uint32(h, key, &nodeid);
+		if (err != CS_OK)
+			break;
+
+		log_debug("node_config %d", nodeid);
+
+		if (cfgd_enable_fencing && cfgd_startup_fence)
+			add_startup_node(nodeid);
+	}
+
+	cmap_finalize(h);
+	return 0;
 }
 

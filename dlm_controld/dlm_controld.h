@@ -29,6 +29,7 @@
 #define DLMC_CMD_FS_NOTIFIED		9
 #define DLMC_CMD_DEADLOCK_CHECK		10
 #define DLMC_CMD_DUMP_LOG_PLOCK		11
+#define DLMC_CMD_FENCE_ACK		12
 
 struct dlmc_header {
 	unsigned int magic;

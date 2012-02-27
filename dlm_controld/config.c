@@ -7,7 +7,6 @@
  */
 
 #include "dlm_daemon.h"
-#include <libxml/tree.h>
 
 /* TODO:
  <dlm>
@@ -37,66 +36,100 @@ static void proto_val(char *str, int *val)
 	}
 }
 
-static void set_val(xmlNode *root, const char *name, int *opt, int *val)
+static void set_val(char *line, int *val_out)
 {
-	xmlChar *str;
+	char key[PATH_MAX];
+	char val[PATH_MAX];
+	int rv;
 
-	str = xmlGetProp(root, BAD_CAST name);
-	if (str && !(*opt)) {
-		*val = atoi((char *)str);
-		log_debug("config %s = %d", name, *val);
-	}
+	rv = sscanf(line, "%[^=]=%s", key, val);
+	if (rv != 2)
+		return;
+
+	*val_out = atoi(val);
+
+	log_debug("config %s=%d", key, *val_out);
+}
+
+static void get_val(char *line, char *val_out)
+{
+	char key[PATH_MAX];
+	char val[PATH_MAX];
+	int rv;
+
+	rv = sscanf(line, "%[^=]=%s", key, val);
+	if (rv != 2)
+		return;
+
+	strcpy(val_out, val);
 }
 
 void setup_config(int update)
 {
-	xmlDoc *doc;
-	xmlNode *root;
-	xmlChar *str;
+	FILE *file;
+	char line[PATH_MAX];
+	char str[PATH_MAX];
 
 	if (!path_exists(CONF_FILE_PATH))
 		return;
 
-	doc = xmlParseFile(CONF_FILE_PATH);
-	if (!doc) {
-		log_error("xml parse error %d %s", errno, CONF_FILE_PATH);
+	file = fopen(CONF_FILE_PATH, "r");
+	if (!file)
 		return;
+
+	while (fgets(line, PATH_MAX, file)) {
+		if (line[0] == '#')
+			continue;
+		if (line[0] == '\n')
+			continue;
+
+		if (!optk_debug && !strncmp(line, "log_debug", strlen("log_debug")))
+			set_val(line, &cfgk_debug);
+
+		else if (!optk_timewarn && !strncmp(line, "timewarn", strlen("timewarn")) && !update)
+			set_val(line, &cfgk_timewarn);
+
+		else if (!optd_enable_fencing && !strncmp(line, "enable_fencing", strlen("enable_fencing")) && !update)
+			set_val(line, &cfgd_enable_fencing);
+
+		else if (!optd_enable_quorum_fencing && !strncmp(line, "enable_quorum_fencing", strlen("enable_quorum_fencing")) && !update)
+			set_val(line, &cfgd_enable_quorum_fencing);
+
+		else if (!optd_enable_quorum_lockspace && !strncmp(line, "enable_quorum_lockspace", strlen("enable_quorum_lockspace")) && !update)
+			set_val(line, &cfgd_enable_quorum_lockspace);
+
+		else if (!optd_enable_fscontrol && !strncmp(line, "enable_fscontrol", strlen("enable_fscontrol")) && !update)
+			set_val(line, &cfgd_enable_fscontrol);
+
+		else if (!optd_enable_plock && !strncmp(line, "enable_plock", strlen("enable_plock")) && !update)
+			set_val(line, &cfgd_enable_plock);
+
+		else if (!optd_plock_ownership && !strncmp(line, "plock_ownership", strlen("plock_ownership")) && !update)
+			set_val(line, &cfgd_plock_ownership);
+
+		else if (!optd_plock_debug && !strncmp(line, "plock_debug", strlen("plock_debug")))
+			set_val(line, &cfgd_plock_debug);
+
+		else if (!optd_plock_rate_limit && !strncmp(line, "plock_rate_limit", strlen("plock_rate_limit")))
+			set_val(line, &cfgd_plock_rate_limit);
+
+		else if (!optd_drop_resources_time && !strncmp(line, "drop_resources_time", strlen("drop_resources_time")))
+			set_val(line, &cfgd_drop_resources_time);
+
+		else if (!optd_drop_resources_count && !strncmp(line, "drop_resources_count", strlen("drop_resources_count")))
+			set_val(line, &cfgd_drop_resources_count);
+
+		else if (!optd_drop_resources_age && !strncmp(line, "drop_resources_age", strlen("drop_resources_age")))
+			set_val(line, &cfgd_drop_resources_age);
+
+		else if (!optk_protocol && !strncmp(line, "protocol", strlen("protocol")) && !update) {
+			memset(str, 0, sizeof(str));
+			get_val(line, str);
+			proto_val(str, &cfgk_protocol);
+			log_debug("config protocol = %d", cfgk_protocol);
+		}
 	}
 
-	root = xmlDocGetRootElement(doc);
-	if (!root) {
-		log_error("xml root error %d %s", errno, CONF_FILE_PATH);
-		xmlFreeDoc(doc);
-		return;
-	}
-
-	if (update)
-		goto do_update;
-
-	/* These config values are set from dlm.conf only if they haven't
-	   already been set on the command line. */
-
-	str = xmlGetProp(root, BAD_CAST "protocol");
-	if (str && !optk_protocol) {
-		proto_val((char *)str, &cfgk_protocol);
-		log_debug("config protocol = %d", cfgk_protocol);
-	}
-
-	set_val(root, "log_debug", &optk_debug, &cfgk_debug);
-	set_val(root, "timewarn", &optk_timewarn, &cfgk_timewarn);
-	set_val(root, "enable_fencing", &optd_enable_fencing, &cfgd_enable_fencing);
-	set_val(root, "enable_quorum", &optd_enable_quorum, &cfgd_enable_quorum);
-	set_val(root, "enable_fscontrol", &optd_enable_fscontrol, &cfgd_enable_fscontrol);
-	set_val(root, "enable_plock", &optd_enable_plock, &cfgd_enable_plock);
-	set_val(root, "plock_ownership", &optd_plock_ownership, &cfgd_plock_ownership);
- do_update:
-	/* The following can be changed while running */
-	set_val(root, "plock_debug", &optd_plock_debug, &cfgd_plock_debug);
-	set_val(root, "plock_rate_limit", &optd_plock_rate_limit, &cfgd_plock_rate_limit);
-	set_val(root, "drop_resources_time", &optd_drop_resources_time, &cfgd_drop_resources_time);
-	set_val(root, "drop_resources_count", &optd_drop_resources_count, &cfgd_drop_resources_count);
-	set_val(root, "drop_resources_age", &optd_drop_resources_age, &cfgd_drop_resources_age);
-
-	xmlFreeDoc(doc);
+	fclose(file);
 }
 

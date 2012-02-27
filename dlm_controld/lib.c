@@ -425,3 +425,22 @@ int dlmc_deadlock_check(char *name)
 	return rv;
 }
 
+int dlmc_fence_ack(char *name)
+{
+	struct dlmc_header h;
+	int fd, rv;
+
+	init_header(&h, DLMC_CMD_FENCE_ACK, name, 0);
+
+	fd = do_connect(DLMC_SOCK_PATH);
+	if (fd < 0) {
+		rv = fd;
+		goto out;
+	}
+
+	rv = do_write(fd, &h, sizeof(h));
+	close(fd);
+ out:
+	return rv;
+}
+

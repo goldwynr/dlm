@@ -38,6 +38,7 @@
 #define OP_LOCKDUMP			8
 #define OP_LOCKDEBUG			9
 #define OP_LOG_PLOCK			10
+#define OP_FENCE_ACK			11
 
 static char *prog_name;
 static char *lsname;
@@ -182,7 +183,7 @@ static void print_usage(void)
 	printf("\n");
 	printf("dlm_tool [options] [join | leave | lockdump | lockdebug |\n"
 	       "                    ls | dump | log_plock | plocks |\n"
-	       "                    deadlock_check]\n");
+	       "                    fence_ack]\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -n               Show all node information in ls\n");
@@ -319,6 +320,11 @@ static void decode_arguments(int argc, char **argv)
 		} else if (!strncmp(argv[optind], "deadlock_check", 14) &&
 			   (strlen(argv[optind]) == 14)) {
 			operation = OP_DEADLOCK_CHECK;
+			opt_ind = optind + 1;
+			break;
+		} else if (!strncmp(argv[optind], "fence_ack", 9) &&
+			   (strlen(argv[optind]) == 9)) {
+			operation = OP_FENCE_ACK;
 			opt_ind = optind + 1;
 			break;
 		} else if (!strncmp(argv[optind], "dump", 4) &&
@@ -1241,6 +1247,11 @@ static void do_deadlock_check(char *name)
 	dlmc_deadlock_check(name);
 }
 
+static void do_fence_ack(char *name)
+{
+	dlmc_fence_ack(name);
+}
+
 static void do_plocks(char *name)
 {
 	char buf[DLMC_DUMP_SIZE];
@@ -1334,6 +1345,10 @@ int main(int argc, char **argv)
 
 	case OP_LOCKDEBUG:
 		do_lockdebug(lsname);
+		break;
+
+	case OP_FENCE_ACK:
+		do_fence_ack(lsname);
 		break;
 	}
 	return 0;

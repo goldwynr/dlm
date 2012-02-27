@@ -163,6 +163,10 @@ static void sigterm_handler(int sig)
 	daemon_quit = 1;
 }
 
+static void sigchld_handler(int sig)
+{
+}
+
 static struct lockspace *create_ls(char *name)
 {
 	struct lockspace *ls;
@@ -649,6 +653,10 @@ static void process_connection(int ci)
 	}
 
 	switch (h.command) {
+	case DLMC_CMD_FENCE_ACK:
+		fence_ack_node(atoi(h.name));
+		break;
+
 	case DLMC_CMD_FS_REGISTER:
 		if (cfgd_enable_fscontrol) {
 			rv = fs_register_add(h.name);
@@ -869,6 +877,8 @@ static void loop(void)
 	void (*workfn) (int ci);
 	void (*deadfn) (int ci);
 
+	setup_config(0);
+
 	rv = setup_queries();
 	if (rv < 0)
 		goto out;
@@ -884,12 +894,14 @@ static void loop(void)
 	if (rv > 0) 
 		client_add(rv, process_cluster_cfg, cluster_dead);
 
+	rv = setup_node_config();
+	if (rv < 0)
+		goto out;
+
 	rv = setup_cluster();
 	if (rv < 0)
 		goto out;
 	client_add(rv, process_cluster, cluster_dead);
-
-	setup_config(0);
 
 	rv = check_uncontrolled_lockspaces();
 	if (rv < 0)
@@ -945,8 +957,10 @@ static void loop(void)
 		if (rv == -1 && errno == EINTR) {
 			if (daemon_quit && list_empty(&lockspaces))
 				goto out;
-			log_error("shutdown ignored, active lockspaces");
-			daemon_quit = 0;
+			if (daemon_quit) {
+				log_error("shutdown ignored, active lockspaces");
+				daemon_quit = 0;
+			}
 			continue;
 		}
 		if (rv < 0) {
@@ -977,7 +991,12 @@ static void loop(void)
 
 		poll_timeout = -1;
 
-		if (poll_fencing || poll_fs) {
+		if (poll_fencing) {
+			process_fencing_changes();
+			poll_timeout = 1000;
+		}
+
+		if (poll_lockspaces || poll_fs) {
 			process_lockspace_changes();
 			poll_timeout = 1000;
 		}
@@ -1097,7 +1116,7 @@ static void print_usage(void)
 	printf("  -f <num>	Enable (1) or disable (0) fencing recovery dependency\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
 	printf("  -q <num>	Enable (1) or disable (0) quorum recovery dependency\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM);
+	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM_FENCING);
 	printf("  -s <num>      Enable (1) or disable (0) fs_controld recovery coordination\n");
 	printf("                Default is %d\n", DEFAULT_ENABLE_FSCONTROL);
 #if 0
@@ -1121,7 +1140,7 @@ static void print_usage(void)
 	printf("  -V		Print program version information, then exit\n");
 }
 
-#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:s:"
+#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:s:e:d:"
 
 static void read_arguments(int argc, char **argv)
 {
@@ -1151,20 +1170,34 @@ static void read_arguments(int argc, char **argv)
 			cfgk_protocol = atoi(optarg);
 			break;
 
+		case 's':
+			optd_enable_fscontrol = 1;
+			cfgd_enable_fscontrol = atoi(optarg);
+			break;
+
+		/* fencing options */
+
 		case 'f':
 			optd_enable_fencing = 1;
 			cfgd_enable_fencing = atoi(optarg);
 			break;
 
 		case 'q':
-			optd_enable_quorum = 1;
-			cfgd_enable_quorum = atoi(optarg);
+			optd_enable_quorum_fencing = 1;
+			cfgd_enable_quorum_fencing = atoi(optarg);
 			break;
 
-		case 's':
-			optd_enable_fscontrol = 1;
-			cfgd_enable_fscontrol = atoi(optarg);
+		case 'e':
+			optd_fence_all_agent = 1;
+			strcpy(fence_all_agent, optarg);
 			break;
+
+		case 'd':
+			optd_startup_fence = 1;
+			cfgd_startup_fence = atoi(optarg);
+
+
+		/* plock options */
 
 		case 'p':
 			optd_enable_plock = 1;
@@ -1256,15 +1289,15 @@ static void set_scheduler(void)
 
 int main(int argc, char **argv)
 {
-	int fd;
+	struct sigaction act;
+	int fd, rv;
 
 	cfgk_debug                  = -1;
 	cfgk_timewarn               = -1;
 	cfgk_protocol               = PROTO_DETECT;
 	cfgd_debug_logfile          = DEFAULT_DEBUG_LOGFILE;
-	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
-	cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;
-	cfgd_enable_quorum          = DEFAULT_ENABLE_FSCONTROL;
+	cfgd_enable_fscontrol       = DEFAULT_ENABLE_FSCONTROL;
+
 	cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
 	cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
 	cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;
@@ -1273,8 +1306,20 @@ int main(int argc, char **argv)
 	cfgd_drop_resources_count   = DEFAULT_DROP_RESOURCES_COUNT;
 	cfgd_drop_resources_age     = DEFAULT_DROP_RESOURCES_AGE;
 
+	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
+	cfgd_enable_quorum_lockspace= DEFAULT_ENABLE_QUORUM_LOCKSPACE;
+	cfgd_enable_quorum_fencing  = DEFAULT_ENABLE_QUORUM_FENCING;
+	cfgd_startup_fence          = DEFAULT_STARTUP_FENCE;
+
+	strcpy(fence_all_agent, DEFAULT_FENCE_ALL_AGENT);
+	memset(&fence_all_device, 0, sizeof(struct fence_device));
+	strcpy(fence_all_device.name, "fence_all");
+	strcpy(fence_all_device.agent, fence_all_agent);
+
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);
+	
+	init_daemon();
 
 	read_arguments(argc, argv);
 
@@ -1293,7 +1338,18 @@ int main(int argc, char **argv)
 
 	log_level(NULL, LOG_INFO, "dlm_controld %s started", RELEASE_VERSION);
 
-	signal(SIGTERM, sigterm_handler);
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = sigterm_handler;
+	rv = sigaction(SIGTERM, &act, NULL);
+	if (rv < 0)
+		return -rv;
+
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = sigchld_handler;
+	act.sa_flags = SA_NOCLDSTOP;
+	rv = sigaction(SIGCHLD, &act, NULL);
+	if (rv < 0)
+		return -rv;
 
 	set_scheduler();
 

@@ -93,6 +93,7 @@ int dlmc_fs_notified(int fd, char *name, int nodeid);
 int dlmc_fs_result(int fd, char *name, int *type, int *nodeid, int *result);
 
 int dlmc_deadlock_check(char *name);
+int dlmc_fence_ack(char *name);
 
 #endif
 

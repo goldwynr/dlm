@@ -27,8 +27,6 @@ static struct timeval plock_rate_last;
 
 static int plock_device_fd = -1;
 
-extern int message_flow_control_on;
-
 #define RD_CONTINUE 0x00000001
 
 struct resource_data {
@@ -1479,14 +1477,6 @@ void drop_resources_all(void)
 int limit_plocks(void)
 {
 	struct timeval now;
-
-	/* Don't send more messages while the cpg message queue is backed up */
-
-	if (message_flow_control_on) {
-		update_flow_control_status();
-		if (message_flow_control_on)
-			return 1;
-	}
 
 	if (!cfgd_plock_rate_limit || !plock_read_count)
 		return 0;

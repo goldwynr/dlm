@@ -34,10 +34,8 @@ static int detect_protocol(void)
 	}
 
 	rv = cmap_get_string(handle, "totem.rrp_mode", &str);
-	if (rv != CS_OK) {
-		log_error("cmap_get_string totem.rrp_mode error %d", rv);
+	if (rv != CS_OK)
 		goto out;
-	}
 
 	log_debug("cmap totem.rrp_mode = '%s'", str);
 
