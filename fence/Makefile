@@ -35,6 +35,7 @@ BIN_CFLAGS += -I../include
 
 BIN_LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie
 BIN_LDFLAGS += `xml2-config --libs`
+BIN_LDFLAGS += -ldl
 
 all: $(BIN_TARGET)
 
