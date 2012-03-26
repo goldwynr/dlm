@@ -578,23 +578,30 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
 
 static int wait_conditions_done(struct lockspace *ls)
 {
-	if (!check_ringid_done(ls))
+	if (!check_ringid_done(ls)) {
+		ls->wait_debug = DLMC_LS_WAIT_RINGID;
 		return 0;
+	}
 
 	if ((cfgd_enable_quorum_lockspace > 1) && !cluster_quorate) {
 		log_group(ls, "wait for quorum");
+		ls->wait_debug = DLMC_LS_WAIT_QUORUM;
 		return 0;
 	}
 
 	if (!check_fencing_done(ls)) {
+		ls->wait_debug = DLMC_LS_WAIT_FENCING;
 		poll_lockspaces++;
 		return 0;
 	}
 
 	if (!check_fs_done(ls)) {
+		ls->wait_debug = DLMC_LS_WAIT_FSDONE;
 		poll_fs++;
 		return 0;
 	}
+
+	ls->wait_debug = 0;
 
 	return 1;
 }
@@ -614,10 +621,14 @@ static int wait_messages_done(struct lockspace *ls)
 	if (need) {
 		log_group(ls, "wait_messages cg %u need %d of %d",
 			  cg->seq, need, total);
+		ls->wait_debug = need;
 		return 0;
 	}
 
 	log_group(ls, "wait_messages cg %u got all %d", cg->seq, total);
+
+	ls->wait_debug = 0;
+
 	return 1;
 }
 
@@ -1746,14 +1757,7 @@ int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace)
 	lockspace->cg_next.failed_count = cg->failed_count;
 	lockspace->cg_next.combined_seq = last->seq;
 	lockspace->cg_next.seq = cg->seq;
-
-	if (cg->state == CGST_WAIT_CONDITIONS)
-		lockspace->cg_next.wait_condition = 5;
-	else if (poll_fencing)
-		lockspace->cg_next.wait_condition = 2;
-	else if (poll_fs)
-		lockspace->cg_next.wait_condition = 4;
-
+	lockspace->cg_next.wait_condition = ls->wait_debug;
 	if (cg->state == CGST_WAIT_MESSAGES)
 		lockspace->cg_next.wait_messages = 1;
  out:
@@ -1786,13 +1790,16 @@ static int _set_node_info(struct lockspace *ls, struct change *cg, int nodeid,
 		goto out;
 
 	if (n->need_fencing)
-		node->flags |= DLMC_NF_CHECK_FENCING;
+		node->flags |= DLMC_NF_NEED_FENCING;
 	if (n->check_fs)
 		node->flags |= DLMC_NF_CHECK_FS;
 
 	node->added_seq = n->lockspace_add_seq;
 	node->removed_seq = n->lockspace_rem_seq;
-	node->failed_reason = n->lockspace_fail_reason;
+
+	node->fail_reason = n->lockspace_fail_reason;
+	node->fail_walltime = n->fail_walltime;
+	node->fail_monotime = n->fail_monotime;
  out:
 	return 0;
 }

@@ -247,6 +247,7 @@ struct lockspace {
 	int			leaving;
 	int			kernel_stopped;
 	int			fs_registered;
+	int			wait_debug; /* for status/debugging */
 	uint32_t		change_seq;
 	uint32_t		started_count;
 	struct change		*started_change;

@@ -14,24 +14,30 @@
 #define DLMC_NF_MEMBER		0x00000001 /* node is member in cg */
 #define DLMC_NF_START		0x00000002 /* start message recvd for cg */
 #define DLMC_NF_DISALLOWED	0x00000004 /* node disallowed in cg */
-#define DLMC_NF_CHECK_FENCING	0x00000008
-#define DLMC_NF_CHECK_QUORUM	0x00000010
-#define DLMC_NF_CHECK_FS	0x00000020
+#define DLMC_NF_NEED_FENCING	0x00000008
+#define DLMC_NF_CHECK_FS	0x00000010
 
 struct dlmc_node {
 	int nodeid;
 	uint32_t flags;
 	uint32_t added_seq;
 	uint32_t removed_seq;
-	int failed_reason;
+	int fail_reason;
+	uint64_t fail_walltime;
+	uint64_t fail_monotime;
 };
+
+#define DLMC_LS_WAIT_RINGID	1
+#define DLMC_LS_WAIT_QUORUM	2
+#define DLMC_LS_WAIT_FENCING	3
+#define DLMC_LS_WAIT_FSDONE	4
 
 struct dlmc_change {
 	int member_count;
 	int joined_count;
 	int remove_count;
 	int failed_count;
-	int wait_condition;	/* 0 no, 1 fencing, 2 quorum, 3 fs */
+	int wait_condition;	/* DLMC_LS_WAIT or needed message count */
 	int wait_messages;	/* 0 no, 1 yes */
 	uint32_t seq;
 	uint32_t combined_seq;
@@ -45,7 +51,6 @@ struct dlmc_change {
 #define DLMC_LF_SAVE_PLOCKS	0x00000020
 
 struct dlmc_lockspace {
-	int group_mode;
 	struct dlmc_change cg_prev;	/* completed change (started_change) */
 	struct dlmc_change cg_next;	/* in-progress change (changes list) */
 	uint32_t flags;

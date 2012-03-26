@@ -1060,15 +1060,18 @@ static char *dlmc_lf_str(uint32_t flags)
 	return str;
 }
 
-static const char *nf_check_str(uint32_t flags)
+static const char *check_str(struct dlmc_node *n)
 {
-	if (flags & DLMC_NF_CHECK_FENCING)
-		return "fence";
+	static char _check_str[32];
 
-	if (flags & DLMC_NF_CHECK_QUORUM)
-		return "quorum";
+	if (n->flags & DLMC_NF_NEED_FENCING) {
+		memset(_check_str, 0, sizeof(_check_str));
+		snprintf(_check_str, sizeof(_check_str) - 1, "fence %llu",
+			(unsigned long long)n->fail_monotime);
+		return _check_str;
+	}
 
-	if (flags & DLMC_NF_CHECK_FS)
+	if (n->flags & DLMC_NF_CHECK_FS)
 		return "fs";
 
 	return "none";
@@ -1077,16 +1080,14 @@ static const char *nf_check_str(uint32_t flags)
 static const char *condition_str(int cond)
 {
 	switch (cond) {
-	case 0:
-		return "";
-	case 1:
-		return "fencing";
-	case 2:
+	case DLMC_LS_WAIT_RINGID:
+		return "ringid";
+	case DLMC_LS_WAIT_QUORUM:
 		return "quorum";
-	case 3:
-		return "fs";
-	case 4:
-		return "pending";
+	case DLMC_LS_WAIT_FENCING:
+		return "fencing";
+	case DLMC_LS_WAIT_FSDONE:
+		return "fsdone";
 	default:
 		return "unknown";
 	}
@@ -1118,8 +1119,7 @@ static void show_ls(struct dlmc_lockspace *ls)
 
 	printf("name          %s\n", ls->name);
 	printf("id            0x%08x\n", ls->global_id);
-	printf("flags         0x%08x %s\n",
-		ls->flags, dlmc_lf_str(ls->flags));
+	printf("flags         0x%08x %s\n", ls->flags, dlmc_lf_str(ls->flags));
 	printf("change        member %d joined %d remove %d failed %d seq %d,%d\n",
 		ls->cg_prev.member_count, ls->cg_prev.joined_count,
 		ls->cg_prev.remove_count, ls->cg_prev.failed_count,
@@ -1147,9 +1147,10 @@ static void show_ls(struct dlmc_lockspace *ls)
 		ls->cg_next.remove_count, ls->cg_next.failed_count,
 	        ls->cg_next.combined_seq, ls->cg_next.seq);
 
-	printf("new status    wait_messages %d wait_condition %d %s\n",
-		ls->cg_next.wait_messages, ls->cg_next.wait_condition,
-		condition_str(ls->cg_next.wait_condition));
+	if (ls->cg_next.wait_messages)
+		printf("new status    wait messages %d\n", ls->cg_next.wait_condition);
+	else
+		printf("new status    wait %s\n", condition_str(ls->cg_next.wait_condition));
 
 	node_count = 0;
 	memset(&nodes, 0, sizeof(nodes));
@@ -1183,11 +1184,11 @@ static void show_all_nodes(int count, struct dlmc_node *nodes_in)
 		printf("nodeid %d member %d failed %d start %d seq_add %u seq_rem %u check %s\n",
 			n->nodeid,
 			member_int(n),
-			n->failed_reason,
+			n->fail_reason,
 			(n->flags & DLMC_NF_START) ? 1 : 0,
 			n->added_seq,
 			n->removed_seq,
-			nf_check_str(n->flags));
+			check_str(n));
 		n++;
 	}
 }
