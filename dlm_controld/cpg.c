@@ -8,6 +8,14 @@
 
 #include "dlm_daemon.h"
 
+#define log_limit(ls, fmt, args...) ({        \
+	static uint32_t __change_nr;          \
+	if (ls->change_seq > __change_nr) {   \
+		__change_nr = ls->change_seq; \
+		log_group(ls, fmt, ##args);   \
+	}                                     \
+})
+
 /* per lockspace cpg: ls->node_history */
 
 struct node {
@@ -374,10 +382,11 @@ static int check_ringid_done(struct lockspace *ls)
 		return 0;
 	}
 
-	log_group(ls, "check_ringid done cluster %u cpg %u:%llu",
+	log_limit(ls, "check_ringid done cluster %u cpg %u:%llu",
 		  cluster_ringid_seq, ls->cpg_ringid.nodeid,
 		  (unsigned long long)ls->cpg_ringid.seq);
-        return 1;
+
+	return 1;
 }
 
 static int check_fencing_done(struct lockspace *ls)
@@ -426,7 +435,7 @@ static int check_fencing_done(struct lockspace *ls)
 	}
 
 	if (wait_count) {
-		log_group(ls, "check_fencing wait_count %d", wait_count);
+		log_limit(ls, "check_fencing wait_count %d", wait_count);
 		return 0;
 	}
 
@@ -441,7 +450,7 @@ static int check_fencing_done(struct lockspace *ls)
 	}
 
 	if (in_progress) {
-		log_group(ls, "check_fencing in progress %d", in_progress);
+		log_limit(ls, "check_fencing in progress %d", in_progress);
 		return 0;
 	}
 
