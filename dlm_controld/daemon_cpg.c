@@ -70,6 +70,7 @@ struct node_daemon {
 	int recover_setup;
 	int need_fence_clear;
 	int need_fencing;
+	int delay_fencing;
 	int fence_pid;
 	int fence_pid_wait;
 	int fence_actor_done;
@@ -98,7 +99,7 @@ static int daemon_ringid_wait;
 static struct cpg_ring_id daemon_ringid;
 static int daemon_clear_nodeid;
 static int daemon_clear_pid;
-static uint64_t last_join_monotime;
+static uint64_t daemon_last_join_monotime;
 static uint32_t last_join_seq;
 static uint32_t send_fipu_seq;
 static int fence_in_progress_unknown = 1;
@@ -736,13 +737,13 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		if (!cfgd_startup_fence)
+		if (!cfgd_enable_startup_fencing)
 			continue;
 
-		if (monotime() - last_join_monotime < cfgd_startup_fence) {
+		if (monotime() - daemon_last_join_monotime < cfgd_post_join_delay) {
 			log_debug("fence startup %d delay %d from %llu",
-				  node->nodeid, cfgd_startup_fence,
-				  (unsigned long long)last_join_monotime);
+				  node->nodeid, cfgd_post_join_delay,
+				  (unsigned long long)daemon_last_join_monotime);
 			poll_fencing++;
 			continue;
 		}
@@ -792,8 +793,30 @@ static void daemon_fence_work(void)
 			/* node rejoined cleanly, doesn't need fencing */
 			log_debug("fence request %d member skip", node->nodeid);
 			node->need_fencing = 0;
+			node->fence_walltime = time(NULL);
+			node->fence_monotime = monotime();
 			continue;
 		}
+
+		/*
+		if (daemon_pid_wait) {
+			log_debug("fence request %d delay for other pid %d",
+				  node->nodeid, daemon_pid_wait);
+			node->delay_fencing = 1;
+			poll_fencing++;
+			continue;
+		}
+		*/
+
+		if (monotime() - cluster_last_join_monotime < cfgd_post_join_delay) {
+			log_debug("fence request %d delay %d from %llu",
+				  node->nodeid, cfgd_post_join_delay,
+				  (unsigned long long)cluster_last_join_monotime);
+			node->delay_fencing = 1;
+			poll_fencing++;
+			continue;
+		}
+		node->delay_fencing = 0;
 
 		/* get_fence_actor picks the low nodeid that existed
 		   when node failed and is still around.  if the current
@@ -836,6 +859,9 @@ static void daemon_fence_work(void)
 		if (!node->need_fencing)
 			continue;
 
+		if (node->delay_fencing)
+			continue;
+
 		if (!node->fence_pid_wait) {
 			/*
 			 * another node is the actor, or we were actor,
@@ -873,7 +899,7 @@ static void daemon_fence_work(void)
 		if (rv < 0) {
 			/* shouldn't happen */
 			log_error("fence wait %d pid %d error %d",
-				  node->nodeid, node->fence_pid_wait, rv);
+				  node->nodeid, node->fence_pid, rv);
 			node->fence_pid_wait = 0;
 			continue;
 		}
@@ -913,7 +939,7 @@ static void daemon_fence_work(void)
  out_fipu:
 	need = nodes_need_fencing();
 
-	if (cfgd_startup_fence && fence_in_progress_unknown && !need && list_empty(&startup_nodes)) {
+	if (cfgd_enable_startup_fencing && fence_in_progress_unknown && !need && list_empty(&startup_nodes)) {
 		/*
 		 * case A in comment above
 		 * all nodes are starting and have fipu set, they all do
@@ -969,7 +995,7 @@ static void daemon_fence_work(void)
 		}
 	}
 
-	if (!cfgd_startup_fence && fence_in_progress_unknown) {
+	if (!cfgd_enable_startup_fencing && fence_in_progress_unknown) {
 		/*
 		 * case C in comment above
 		 * all nodes are starting and have fipu set.  All expect a
@@ -1712,7 +1738,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->daemon_member = 1;
 			node->daemon_add_time = now;
 
-			last_join_monotime = now;
+			daemon_last_join_monotime = now;
 			last_join_seq++;
 
 			/* a joining node shows prev members in joined list */

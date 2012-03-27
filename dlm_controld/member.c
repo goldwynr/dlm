@@ -150,6 +150,8 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 				  quorum_nodes[i], cluster_ringid_seq);
 			add_cluster_node(quorum_nodes[i], now);
 
+			cluster_last_join_monotime = now;
+
 			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
 							  MAX_NODE_ADDRESSES,
 							  &num_addrs, addrs);
@@ -354,7 +356,7 @@ int setup_node_config(void)
 
 		log_debug("node_config %d", nodeid);
 
-		if (cfgd_enable_fencing && cfgd_startup_fence)
+		if (cfgd_enable_fencing && cfgd_enable_startup_fencing)
 			add_startup_node(nodeid);
 	}
 

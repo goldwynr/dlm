@@ -81,7 +81,9 @@
 #define DEFAULT_LOGFILE          LOG_FILE_PATH
 
 #define DEFAULT_DEBUG_LOGFILE 0
+#define DEFAULT_POST_JOIN_DELAY 30
 #define DEFAULT_ENABLE_FENCING 1
+#define DEFAULT_ENABLE_STARTUP_FENCING 1
 #define DEFAULT_ENABLE_QUORUM_FENCING 1
 #define DEFAULT_ENABLE_QUORUM_LOCKSPACE 0
 #define DEFAULT_ENABLE_FSCONTROL 0
@@ -93,7 +95,6 @@
 #define DEFAULT_DROP_RESOURCES_COUNT 10
 #define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
 #define DEFAULT_FENCE_ALL_AGENT "dlm_stonith"
-#define DEFAULT_STARTUP_FENCE 30
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -132,6 +133,7 @@ EXTERN int plock_fd;
 EXTERN int plock_ci;
 EXTERN struct list_head lockspaces;
 EXTERN int cluster_quorate;
+EXTERN uint64_t cluster_last_join_monotime;
 EXTERN uint64_t cluster_quorate_monotime;
 EXTERN uint64_t cluster_joined_monotime;
 EXTERN uint64_t cluster_joined_walltime;
@@ -147,7 +149,9 @@ EXTERN int optk_debug;
 EXTERN int optk_timewarn;
 EXTERN int optk_protocol;
 EXTERN int optd_debug_logfile;
+EXTERN int optd_post_join_delay;
 EXTERN int optd_enable_fencing;
+EXTERN int optd_enable_startup_fencing;
 EXTERN int optd_enable_quorum_fencing;
 EXTERN int optd_enable_quorum_lockspace;
 EXTERN int optd_enable_fscontrol;
@@ -158,14 +162,15 @@ EXTERN int optd_plock_ownership;
 EXTERN int optd_drop_resources_time;
 EXTERN int optd_drop_resources_count;
 EXTERN int optd_drop_resources_age;
-EXTERN int optd_startup_fence;
 EXTERN int optd_fence_all_agent;
 
 EXTERN int cfgk_debug;
 EXTERN int cfgk_timewarn;
 EXTERN int cfgk_protocol;
 EXTERN int cfgd_debug_logfile;
+EXTERN int cfgd_post_join_delay;
 EXTERN int cfgd_enable_fencing;
+EXTERN int cfgd_enable_startup_fencing;
 EXTERN int cfgd_enable_quorum_fencing;
 EXTERN int cfgd_enable_quorum_lockspace;
 EXTERN int cfgd_enable_fscontrol;
@@ -176,7 +181,6 @@ EXTERN int cfgd_plock_ownership;
 EXTERN int cfgd_drop_resources_time;
 EXTERN int cfgd_drop_resources_count;
 EXTERN int cfgd_drop_resources_age;
-EXTERN int cfgd_startup_fence;
 EXTERN char fence_all_agent[PATH_MAX];
 
 #define LOG_DUMP_SIZE DLMC_DUMP_SIZE

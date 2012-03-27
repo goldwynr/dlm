@@ -89,8 +89,14 @@ void setup_config(int update)
 		else if (!optk_timewarn && !strncmp(line, "timewarn", strlen("timewarn")) && !update)
 			set_val(line, &cfgk_timewarn);
 
+		else if (!optd_post_join_delay && !strncmp(line, "post_join_delay", strlen("post_join_delay")))
+			set_val(line, &cfgd_post_join_delay);
+
 		else if (!optd_enable_fencing && !strncmp(line, "enable_fencing", strlen("enable_fencing")) && !update)
 			set_val(line, &cfgd_enable_fencing);
+
+		else if (!optd_enable_startup_fencing && !strncmp(line, "enable_startup_fencing", strlen("enable_startup_fencing")) && !update)
+			set_val(line, &cfgd_enable_startup_fencing);
 
 		else if (!optd_enable_quorum_fencing && !strncmp(line, "enable_quorum_fencing", strlen("enable_quorum_fencing")) && !update)
 			set_val(line, &cfgd_enable_quorum_fencing);

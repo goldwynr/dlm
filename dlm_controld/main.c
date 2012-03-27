@@ -1113,16 +1113,16 @@ static void print_usage(void)
 	printf("  -r <num>      dlm kernel lowcomms protocol, 0 tcp, 1 sctp, 2 detect\n");
 	printf("                2 selects tcp if corosync rrp_mode is \"none\", otherwise sctp\n");
 	printf("                Default is 2\n");
-	printf("  -f <num>	Enable (1) or disable (0) fencing recovery dependency\n");
+
+	printf("  -j <sec>      Seconds to delay fencing after cluster join\n");
+	printf("                Default is %d\n", DEFAULT_POST_JOIN_DELAY);
+	printf("  -f <num>	Enable (1) or disable (0) fencing\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
-	printf("  -q <num>	Enable (1) or disable (0) quorum recovery dependency\n");
+	printf("  -s <num>	Enable (1) or disable (0) startup fencing\n");
+	printf("		Default is %d\n", DEFAULT_ENABLE_STARTUP_FENCING);
+	printf("  -q <num>	Enable (1) or disable (0) quorum wait before fencing\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM_FENCING);
-	printf("  -s <num>      Enable (1) or disable (0) fs_controld recovery coordination\n");
-	printf("                Default is %d\n", DEFAULT_ENABLE_FSCONTROL);
-#if 0
-	printf("  -d <num>	Enable (1) or disable (0) deadlock detection code\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_DEADLK);
-#endif
+
 	printf("  -p <num>	Enable (1) or disable (0) plock code for cluster fs\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_PLOCK);
 	printf("  -P		Enable plock debugging\n");
@@ -1136,11 +1136,12 @@ static void print_usage(void)
 	printf("		Default is %u\n", DEFAULT_DROP_RESOURCES_COUNT);
 	printf("  -a <ms>	plock ownership drop resources age (milliseconds)\n");
 	printf("		Default is %u\n", DEFAULT_DROP_RESOURCES_AGE);
+
 	printf("  -h		Print this help, then exit\n");
 	printf("  -V		Print program version information, then exit\n");
 }
 
-#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:s:e:d:"
+#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:s:e:j:"
 
 static void read_arguments(int argc, char **argv)
 {
@@ -1170,17 +1171,21 @@ static void read_arguments(int argc, char **argv)
 			cfgk_protocol = atoi(optarg);
 			break;
 
-		case 's':
-			optd_enable_fscontrol = 1;
-			cfgd_enable_fscontrol = atoi(optarg);
-			break;
-
 		/* fencing options */
+
+		case 'j':
+			optd_post_join_delay = 1;
+			cfgd_post_join_delay = atoi(optarg);
+			break;
 
 		case 'f':
 			optd_enable_fencing = 1;
 			cfgd_enable_fencing = atoi(optarg);
 			break;
+
+		case 's':
+			optd_enable_startup_fencing = 1;
+			cfgd_enable_startup_fencing = atoi(optarg);
 
 		case 'q':
 			optd_enable_quorum_fencing = 1;
@@ -1191,10 +1196,6 @@ static void read_arguments(int argc, char **argv)
 			optd_fence_all_agent = 1;
 			strcpy(fence_all_agent, optarg);
 			break;
-
-		case 'd':
-			optd_startup_fence = 1;
-			cfgd_startup_fence = atoi(optarg);
 
 
 		/* plock options */
@@ -1306,10 +1307,11 @@ int main(int argc, char **argv)
 	cfgd_drop_resources_count   = DEFAULT_DROP_RESOURCES_COUNT;
 	cfgd_drop_resources_age     = DEFAULT_DROP_RESOURCES_AGE;
 
+	cfgd_post_join_delay        = DEFAULT_POST_JOIN_DELAY;
 	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
-	cfgd_enable_quorum_lockspace= DEFAULT_ENABLE_QUORUM_LOCKSPACE;
+	cfgd_enable_startup_fencing = DEFAULT_ENABLE_STARTUP_FENCING;
 	cfgd_enable_quorum_fencing  = DEFAULT_ENABLE_QUORUM_FENCING;
-	cfgd_startup_fence          = DEFAULT_STARTUP_FENCE;
+	cfgd_enable_quorum_lockspace= DEFAULT_ENABLE_QUORUM_LOCKSPACE;
 
 	strcpy(fence_all_agent, DEFAULT_FENCE_ALL_AGENT);
 	memset(&fence_all_device, 0, sizeof(struct fence_device));
