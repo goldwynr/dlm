@@ -102,6 +102,7 @@ static int daemon_clear_pid;
 static uint64_t daemon_last_join_monotime;
 static uint32_t last_join_seq;
 static uint32_t send_fipu_seq;
+static int wait_clear_fipu;
 static int fence_in_progress_unknown = 1;
 
 static void send_fence_result(int nodeid, int result, uint32_t flags, uint64_t walltime);
@@ -937,9 +938,11 @@ static void daemon_fence_work(void)
 	 * clear fence_in_progress_unknown
 	 */
  out_fipu:
-	need = nodes_need_fencing();
-
-	if (cfgd_enable_startup_fencing && fence_in_progress_unknown && !need && list_empty(&startup_nodes)) {
+	if (cfgd_enable_startup_fencing &&
+	    fence_in_progress_unknown &&
+	    list_empty(&startup_nodes) &&
+	    !wait_clear_fipu &&
+	    !nodes_need_fencing()) {
 		/*
 		 * case A in comment above
 		 * all nodes are starting and have fipu set, they all do
@@ -958,8 +961,11 @@ static void daemon_fence_work(void)
 		 * once all fencing is done so they clear fipu.
 		 */
 		low = 0;
+		need = 0;
 
 		list_for_each_entry(node, &daemon_nodes, list) {
+			if (node->need_fencing)
+				need++;
 			if (!node->daemon_member || node->need_fence_clear)
 				continue;
 			if (!low || node->nodeid < low)
@@ -1079,16 +1085,22 @@ static void receive_fence_clear(struct dlm_header *hd, int len)
 	 * may come in separate messages if there is a pending fencing op
 	 * when the new member joins (CLEAR_STARTUP will come right away,
 	 * but CLEAR_FIPU will come once the fencing op is done.)
+	 *
+	 * We need wait_clear_fipu after emptying startup_nodes to avoid
+	 * thinking we've finished startup fencing in case A below, and
+	 * clearing fipu ourselves.
 	 */
 	if (!fr->result && (node->nodeid == our_nodeid)) {
 		if ((fr->flags & FR_CLEAR_STARTUP) && !list_empty(&startup_nodes)) {
 			count = clear_startup_node(0, 1);
 			log_debug("clear_startup_nodes %d", count);
+			wait_clear_fipu = 1;
 		}
 
 		if ((fr->flags & FR_CLEAR_FIPU) && fence_in_progress_unknown) {
 			fence_in_progress_unknown = 0;
 			log_debug("fence_in_progress_unknown 0 recv");
+			wait_clear_fipu = 0;
 		}
 	}
 
