@@ -77,7 +77,6 @@ struct node_daemon {
 	int fence_actors[MAX_NODES];
 	uint64_t fail_walltime;
 	uint64_t fail_monotime;
-	uint64_t fence_request_time;
 	uint64_t fence_walltime;
 	uint64_t fence_monotime;
 };
@@ -97,13 +96,16 @@ static int daemon_joined_count;
 static int daemon_remove_count;
 static int daemon_ringid_wait;
 static struct cpg_ring_id daemon_ringid;
-static int daemon_clear_nodeid;
-static int daemon_clear_pid;
+static int daemon_fence_pid;
 static uint64_t daemon_last_join_monotime;
 static uint32_t last_join_seq;
 static uint32_t send_fipu_seq;
 static int wait_clear_fipu;
 static int fence_in_progress_unknown = 1;
+
+#define MAX_ZOMBIES 16
+static int zombie_pids[MAX_ZOMBIES];
+static int zombie_count;
 
 static void send_fence_result(int nodeid, int result, uint32_t flags, uint64_t walltime);
 static void send_fence_clear(int nodeid, int result, uint32_t flags, uint64_t walltime);
@@ -575,12 +577,44 @@ static void clear_fence_actor(int nodeid, int actor)
 	}
 }
 
-/* TODO: handle delayed cleanup of more than one pid */
+static void clear_zombies(void)
+{
+	int i, rv, result = 0;
+
+	for (i = 0; i < MAX_ZOMBIES; i++) {
+		if (!zombie_count)
+			break;
+		if (!zombie_pids[i])
+			continue;
+
+		rv = fence_result(-1, zombie_pids[i], &result);
+		if (rv == -EAGAIN)
+			continue;
+
+		log_debug("cleared zombie %d rv %d result %d",
+			  zombie_pids[i], rv, result);
+
+		zombie_pids[i] = 0;
+		zombie_count--;
+	}
+}
+
+static void add_zombie(int pid)
+{
+	int i;
+
+	for (i = 0; i < MAX_ZOMBIES; i++) {
+		if (!zombie_pids[i]) {
+			zombie_pids[i] = pid;
+			zombie_count++;
+			return;
+		}
+	}
+}
 
 static void fence_pid_cancel(int nodeid, int pid)
 {
-	struct node_daemon *node;
-	int rv, result;
+	int rv, result = 0;
 
 	log_debug("fence_pid_cancel nodeid %d pid %d", nodeid, pid);
 
@@ -588,23 +622,11 @@ static void fence_pid_cancel(int nodeid, int pid)
 	usleep(500000);
 
 	rv = fence_result(nodeid, pid, &result);
-	if (rv == -EAGAIN) {
-		/* Try again later */
-		daemon_clear_nodeid = nodeid;
-		daemon_clear_pid = pid;
-	} else {
-		log_debug("fence_pid_cancel nodeid %d pid %d done %d",
-			  nodeid, pid, result);
+	if (rv == -EAGAIN)
+		add_zombie(pid);
 
-		daemon_clear_nodeid = 0;
-		daemon_clear_pid = 0;
-
-		node = get_node_daemon(nodeid);
-		if (node && node->fence_pid == pid) {
-			node->fence_pid_wait = 0;
-			node->fence_pid = 0;
-		}
-	}
+	log_debug("fence_pid_cancel nodeid %d pid %d rv %d result %d",
+		  nodeid, pid, rv, result);
 }
 
 /*
@@ -723,6 +745,7 @@ static void daemon_fence_work(void)
 		/* wait for quorum before doing any fencing, but if there
 		   is none, send_fence_clear below can unblock new nodes */
 		log_debug("fence work wait for quorum");
+		poll_fencing++;
 		goto out_fipu;
 	}
 
@@ -732,7 +755,7 @@ static void daemon_fence_work(void)
 
 	list_for_each_entry_safe(node, safe, &startup_nodes, list) {
 		if (is_clean_daemon_member(node->nodeid)) {
-			log_debug("fence startup %d member skip", node->nodeid);
+			log_debug("fence startup %d skip member", node->nodeid);
 			list_del(&node->list);
 			free(node);
 			continue;
@@ -767,13 +790,16 @@ static void daemon_fence_work(void)
 			continue;
 		}
 		node->need_fencing = 1;
+		node->delay_fencing = 0;
+		node->fence_monotime = 0;
+		node->fence_walltime = 0;
+		node->fence_actor_done = 0;
+		node->fence_pid_wait = 0;
+		node->fence_pid = 0;
 		node->fence_config.pos = 0;
 		node->left_reason = REASON_STARTUP_FENCING;
 		node->fail_monotime = cluster_joined_monotime - 1;
 		node->fail_walltime = cluster_joined_walltime - 1;
-		node->fence_monotime = 0;
-		node->fence_walltime = 0;
-		node->fence_request_time = 0;
 		low = set_fence_actors(node, 1);
 
 		log_debug("fence startup nodeid %d act %d", node->nodeid, low);
@@ -791,23 +817,27 @@ static void daemon_fence_work(void)
 			continue;
 
 		if (is_clean_daemon_member(node->nodeid)) {
-			/* node rejoined cleanly, doesn't need fencing */
-			log_debug("fence request %d member skip", node->nodeid);
+			/*
+			 * node has rejoined in clean state
+			 */
+			log_debug("fence request %d skip member", node->nodeid);
+
 			node->need_fencing = 0;
+			node->delay_fencing = 0;
 			node->fence_walltime = time(NULL);
 			node->fence_monotime = monotime();
+			node->fence_actor_done = node->nodeid;
 			continue;
 		}
 
-		/*
-		if (daemon_pid_wait) {
+		if (!cfgd_enable_concurrent_fencing && daemon_fence_pid) {
+			/* run one agent at a time in case they need the same switch */
 			log_debug("fence request %d delay for other pid %d",
-				  node->nodeid, daemon_pid_wait);
+				  node->nodeid, daemon_fence_pid);
 			node->delay_fencing = 1;
 			poll_fencing++;
 			continue;
 		}
-		*/
 
 		if (monotime() - cluster_last_join_monotime < cfgd_post_join_delay) {
 			log_debug("fence request %d delay %d from %llu",
@@ -843,13 +873,15 @@ static void daemon_fence_work(void)
 				   node->fail_walltime, node->fail_monotime,
 				   &node->fence_config, &pid);
 		if (rv < 0) {
+			/* FIXME: keep ourself from retrying between here
+			 * and receiving this message */
 			send_fence_result(node->nodeid, rv, 0, time(NULL));
 			continue;
 		}
 
 		node->fence_pid_wait = 1;
 		node->fence_pid = pid;
-		node->fence_request_time = monotime();
+		daemon_fence_pid = pid;
 	}
 
 	/*
@@ -866,71 +898,81 @@ static void daemon_fence_work(void)
 		if (!node->fence_pid_wait) {
 			/*
 			 * another node is the actor, or we were actor,
-			 * sent done msg and are waiting to recv it
+			 * and are between our own send_fence_result()
+			 * and receive_fence_result()
 			 */
 			log_debug("fence wait %d for done", node->nodeid);
 			continue;
 		}
 
-		if (is_clean_daemon_member(node->nodeid)) {
+		if (!node->fence_pid) {
+			/* shouldn't happen */
+			log_error("fence wait %d zero pid", node->nodeid);
+			node->fence_pid_wait = 0;
+			continue;
+		}
+
+		nodeid = node->nodeid;
+		pid = node->fence_pid;
+
+		if (is_clean_daemon_member(nodeid)) {
 			/*
 			 * node has rejoined in clean state so we can
 			 * abort outstanding fence op for it.  all nodes
 			 * will see and do this, so we don't need to send
 			 * a fence result.
 			 */
-			log_debug("fence wait %d member skip", node->nodeid);
+			log_debug("fence wait %d pid %d skip member", nodeid, pid);
+
 			node->need_fencing = 0;
+			node->delay_fencing = 0;
 			node->fence_walltime = time(NULL);
 			node->fence_monotime = monotime();
-			fence_pid_cancel(node->nodeid, node->fence_pid);
+			node->fence_actor_done = nodeid;
+
+			node->fence_pid_wait = 0;
+			node->fence_pid = 0;
+			daemon_fence_pid = 0;
+
+			fence_pid_cancel(nodeid, pid);
 			continue;
 		}
 
 		poll_fencing++;
 
-		rv = fence_result(node->nodeid, node->fence_pid, &result);
+		rv = fence_result(nodeid, pid, &result);
 		if (rv == -EAGAIN) {
 			/* agent pid is still running */
-			log_debug("fence wait %d pid %d running",
-				  node->nodeid, node->fence_pid);
+			log_debug("fence wait %d pid %d running", nodeid, pid);
 			continue;
 		}
 
+		node->fence_pid_wait = 0;
+		node->fence_pid = 0;
+		daemon_fence_pid = 0;
+
 		if (rv < 0) {
 			/* shouldn't happen */
-			log_error("fence wait %d pid %d error %d",
-				  node->nodeid, node->fence_pid, rv);
-			node->fence_pid_wait = 0;
+			log_error("fence wait %d pid %d error %d", nodeid, pid, rv);
 			continue;
 		}
+
+		log_debug("fence wait %d pid %d result %d", nodeid, pid, result);
 
 		if (!result) {
 			/* agent exit 0, if there's another agent to run in
 			   parallel, set it to run next, otherwise success */
 
-			log_debug("fence nodeid %d pid %d succeeded",
-				  node->nodeid, node->fence_pid);
-
-			node->fence_pid_wait = 0;
-			node->fence_pid = 0;
-
 			rv = fence_config_next_parallel(&node->fence_config);
 			if (rv < 0)
-				send_fence_result(node->nodeid, 0, 0, time(NULL));
+				send_fence_result(nodeid, 0, 0, time(NULL));
 		} else {
 			/* agent exit 1, if there's another agent to run at
 			   next priority, set it to run next, otherwise fail */
 
-			log_debug("fence nodeid %d pid %d failed %d",
-				  node->nodeid, node->fence_pid, result);
-
-			node->fence_pid_wait = 0;
-			node->fence_pid = 0;
-
 			rv = fence_config_next_priority(&node->fence_config);
 			if (rv < 0)
-				send_fence_result(node->nodeid, result, 0, time(NULL));
+				send_fence_result(nodeid, result, 0, time(NULL));
 		}
 	}
 
@@ -1026,8 +1068,8 @@ static void daemon_fence_work(void)
 	 * clean up a zombie pid from an agent we killed
 	 */
 
-	if (daemon_clear_pid)
-		fence_pid_cancel(daemon_clear_nodeid, daemon_clear_pid);
+	if (zombie_count)
+		clear_zombies();
 }
 
 void process_fencing_changes(void)
@@ -1185,20 +1227,23 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 		return;
 	}
 
-	if (fr->result == -ECANCELED) {
-		/* if an agent pid is running, kill it and clean up */
-		if (node->fence_pid_wait && node->fence_pid)
-			fence_pid_cancel(node->nodeid, node->fence_pid);
-		fr->result = 0; /* force success below */
-	}
-
-	if (!fr->result) {
+	if (!fr->result || (fr->result == -ECANCELED)) {
 		node->need_fencing = 0;
+		node->delay_fencing = 0;
 		node->fence_walltime = fr->fence_walltime;
 		node->fence_monotime = monotime();
 		node->fence_actor_done = hd->nodeid;
 	} else {
+		/* causes the next lowest nodeid to request fencing */
 		clear_fence_actor(fr->nodeid, hd->nodeid);
+	}
+
+	if ((fr->result == -ECANCELED) && node->fence_pid_wait && node->fence_pid) {
+		fence_pid_cancel(node->nodeid, node->fence_pid);
+
+		node->fence_pid_wait = 0;
+		node->fence_pid = 0;
+		daemon_fence_pid = 0;
 	}
 }
 
@@ -1810,14 +1855,23 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 		}
 
 		if (reason == CPG_REASON_NODEDOWN || reason == CPG_REASON_PROCDOWN) {
+			if (node->fence_pid_wait || node->fence_pid) {
+				/* sanity check, should never happen */
+				log_error("daemon remove nodeid %d pid_wait %d pid %d",
+					  node->nodeid, node->fence_pid_wait, node->fence_pid);
+			}
+
 			node->need_fencing = 1;
+			node->delay_fencing = 0;
+			node->fence_monotime = 0;
+			node->fence_walltime = 0;
+			node->fence_actor_done = 0;
+			node->fence_pid_wait = 0;
+			node->fence_pid = 0;
 			node->fence_config.pos = 0;
 			node->left_reason = reason;
 			node->fail_monotime = now;
 			node->fail_walltime = now_wall;
-			node->fence_monotime = 0;
-			node->fence_walltime = 0;
-			node->fence_request_time = 0;
 			low = set_fence_actors(node, 0);
 		}
 

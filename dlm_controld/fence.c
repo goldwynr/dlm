@@ -102,21 +102,26 @@ int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
 
 	rv = run_agent(dev->agent, args, &pid);
 	if (rv < 0) {
-		log_error("fence_request %d agent %s pid %d run error %d",
-			  nodeid, dev->agent, pid, rv);
+		log_error("fence_request %d pos %d name %s agent %s pid %d run error %d",
+			  nodeid, fc->pos, dev->name, dev->agent, pid, rv);
 		return rv;
 	}
 
-	log_debug("fence_request %d pos %d agent %s pid %d running",
-		  nodeid, fc->pos, dev->agent, pid);
+	log_debug("fence_request %d pos %d name %s agent %s pid %d running",
+		  nodeid, fc->pos, dev->name, dev->agent, pid);
 
 	*pid_out = pid;
 	return 0;
 }
 
 /*
- * if pid has exited, return 0 with exit code in result
+ * if pid has exited, return 0
+ * result is 0 for success, non-zero for fail
+ * success if pid exited with exit status 0
+ * fail if pid exited with non-zero exit status, or was terminated by signal
+ *
  * if pid is running, return -EAGAIN
+ *
  * other error, return -EXXX
  */
 
@@ -128,26 +133,40 @@ int fence_result(int nodeid, int pid, int *result)
 
 	if (rv < 0) {
 		/* shouldn't happen */
-		log_error("agent pid %d nodeid %d errno %d",
-			  pid, nodeid, errno);
+		log_error("waitpid %d nodeid %d error rv %d errno %d",
+			  pid, nodeid, rv, errno);
 		return rv;
+	}
 
-	} else if (!rv) {
-		/* pid still running */
+	if (!rv) {
+		/* pid still running, has not changed state */
 		return -EAGAIN;
+	}
 
-	} else if (WIFEXITED(status)) {
-		/* pid exited */
+	if (rv == pid) {
+		/* pid state has changed */
 
-		*result = WEXITSTATUS(status);
+		if (WIFEXITED(status)) {
+			/* pid exited with an exit code */
+			*result = WEXITSTATUS(status);
+			log_error("waitpid %d nodeid %d exit status %d",
+				  pid, nodeid, *result);
+			return 0;
+		}
+		if (WIFSIGNALED(status)) {
+			/* pid exited due to a signal */
+			*result = -1;
+			log_error("waitpid %d nodeid %d term signal %d",
+				  pid, nodeid, WTERMSIG(status));
+			return 0;
+		}
 
-		log_error("agent pid %d nodeid %d result %d",
-			  pid, nodeid, *result);
-		return 0;
-
-	} else {
 		/* pid state changed but still running */
 		return -EAGAIN;
 	}
+
+	/* shouldn't happen */
+	log_error("waitpid %d nodeid %d error rv %d", pid, nodeid, rv);
+	return -1;
 }
 

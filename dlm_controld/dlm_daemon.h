@@ -84,6 +84,7 @@
 #define DEFAULT_POST_JOIN_DELAY 30
 #define DEFAULT_ENABLE_FENCING 1
 #define DEFAULT_ENABLE_STARTUP_FENCING 1
+#define DEFAULT_ENABLE_CONCURRENT_FENCING 0
 #define DEFAULT_ENABLE_QUORUM_FENCING 1
 #define DEFAULT_ENABLE_QUORUM_LOCKSPACE 0
 #define DEFAULT_ENABLE_FSCONTROL 0
@@ -152,6 +153,7 @@ EXTERN int optd_debug_logfile;
 EXTERN int optd_post_join_delay;
 EXTERN int optd_enable_fencing;
 EXTERN int optd_enable_startup_fencing;
+EXTERN int optd_enable_concurrent_fencing;
 EXTERN int optd_enable_quorum_fencing;
 EXTERN int optd_enable_quorum_lockspace;
 EXTERN int optd_enable_fscontrol;
@@ -171,6 +173,7 @@ EXTERN int cfgd_debug_logfile;
 EXTERN int cfgd_post_join_delay;
 EXTERN int cfgd_enable_fencing;
 EXTERN int cfgd_enable_startup_fencing;
+EXTERN int cfgd_enable_concurrent_fencing;
 EXTERN int cfgd_enable_quorum_fencing;
 EXTERN int cfgd_enable_quorum_lockspace;
 EXTERN int cfgd_enable_fscontrol;

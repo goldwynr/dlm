@@ -98,6 +98,9 @@ void setup_config(int update)
 		else if (!optd_enable_startup_fencing && !strncmp(line, "enable_startup_fencing", strlen("enable_startup_fencing")) && !update)
 			set_val(line, &cfgd_enable_startup_fencing);
 
+		else if (!optd_enable_concurrent_fencing && !strncmp(line, "enable_concurrent_fencing", strlen("enable_concurrent_fencing")) && !update)
+			set_val(line, &cfgd_enable_concurrent_fencing);
+
 		else if (!optd_enable_quorum_fencing && !strncmp(line, "enable_quorum_fencing", strlen("enable_quorum_fencing")) && !update)
 			set_val(line, &cfgd_enable_quorum_fencing);
 
