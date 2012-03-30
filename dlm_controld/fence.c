@@ -78,7 +78,7 @@ static int run_agent(char *agent, char *args, int *pid_out)
 }
 
 int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
-		  struct fence_config *fc, int *pid_out)
+		  struct fence_config *fc, int reason, int *pid_out)
 {
 	struct fence_device *dev;
 	char args[FENCE_CONFIG_ARGS_MAX];
@@ -91,24 +91,28 @@ int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
 	snprintf(extra, sizeof(extra)-1, "fail_time=%llu\n", (unsigned long long)fail_walltime);
 
 	dev = fc->dev[fc->pos];
-	if (!dev)
+	if (!dev) {
+		log_error("fence request %d no config pos %d", nodeid, fc->pos);
 		return -1;
+	}
 
 	rv = fence_config_agent_args(fc, extra, args);
 	if (rv < 0) {
-		log_error("fence_request %d args error %d", nodeid, rv);
+		log_error("fence request %d args error %d", nodeid, rv);
 		return rv;
 	}
 
 	rv = run_agent(dev->agent, args, &pid);
 	if (rv < 0) {
-		log_error("fence_request %d pos %d name %s agent %s pid %d run error %d",
-			  nodeid, fc->pos, dev->name, dev->agent, pid, rv);
+		log_error("fence request %d pid %d %s time %llu %s %s run error %d",
+			  nodeid, pid, reason_str(reason), (unsigned long long)fail_walltime,
+			  dev->name, dev->agent, rv);
 		return rv;
 	}
 
-	log_debug("fence_request %d pos %d name %s agent %s pid %d running",
-		  nodeid, fc->pos, dev->name, dev->agent, pid);
+	log_error("fence request %d pid %d %s time %llu %s %s",
+		  nodeid, pid, reason_str(reason), (unsigned long long)fail_walltime,
+		  dev->name, dev->agent);
 
 	*pid_out = pid;
 	return 0;
@@ -133,7 +137,7 @@ int fence_result(int nodeid, int pid, int *result)
 
 	if (rv < 0) {
 		/* shouldn't happen */
-		log_error("waitpid %d nodeid %d error rv %d errno %d",
+		log_error("fence result %d pid %d waitpid %d errno %d",
 			  pid, nodeid, rv, errno);
 		return rv;
 	}
@@ -149,15 +153,17 @@ int fence_result(int nodeid, int pid, int *result)
 		if (WIFEXITED(status)) {
 			/* pid exited with an exit code */
 			*result = WEXITSTATUS(status);
-			log_error("waitpid %d nodeid %d exit status %d",
-				  pid, nodeid, *result);
+
+			log_error("fence result %d pid %d result %d exit status",
+				  nodeid, pid, *result);
 			return 0;
 		}
 		if (WIFSIGNALED(status)) {
-			/* pid exited due to a signal */
+			/* pid terminated due to a signal */
 			*result = -1;
-			log_error("waitpid %d nodeid %d term signal %d",
-				  pid, nodeid, WTERMSIG(status));
+
+			log_error("fence result %d pid %d result %d term signal %d",
+				  nodeid, pid, *result, WTERMSIG(status));
 			return 0;
 		}
 
@@ -166,7 +172,7 @@ int fence_result(int nodeid, int pid, int *result)
 	}
 
 	/* shouldn't happen */
-	log_error("waitpid %d nodeid %d error rv %d", pid, nodeid, rv);
+	log_error("fence result %d pid %d waitpid rv %d", nodeid, pid, rv);
 	return -1;
 }
 

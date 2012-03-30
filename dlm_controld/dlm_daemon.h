@@ -400,7 +400,7 @@ int setup_node_config(void);
 
 /* fence.c */
 int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
-                  struct fence_config *fc, int *pid_out);
+                  struct fence_config *fc, int reason, int *pid_out);
 int fence_result(int nodeid, int pid, int *result);
 
 /* netlink.c */

@@ -190,6 +190,8 @@ void log_ringid(const char *name,
 const char *reason_str(int reason)
 {
 	switch (reason) {
+	case REASON_STARTUP_FENCING:
+		return "startup";
 	case CPG_REASON_JOIN:
 		return "join";
 	case CPG_REASON_LEAVE:
@@ -868,11 +870,15 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		log_debug("fence request %d", node->nodeid);
+		log_debug("fence request %d pos %d",
+			  node->nodeid, node->fence_config.pos);
 
 		rv = fence_request(node->nodeid,
-				   node->fail_walltime, node->fail_monotime,
-				   &node->fence_config, &pid);
+				   node->fail_walltime,
+				   node->fail_monotime,
+				   &node->fence_config,
+				   node->left_reason,
+				   &pid);
 		if (rv < 0) {
 			/* FIXME: keep ourself from retrying between here
 			 * and receiving this message */
@@ -1189,6 +1195,7 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 {
 	struct fence_result *fr;
 	struct node_daemon *node;
+	uint64_t now;
 	int count;
 
 	fr = (struct fence_result *)((char *)hd + sizeof(struct dlm_header));
@@ -1206,33 +1213,36 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 
 	count = clear_startup_node(fr->nodeid, 0);
 	if (count) {
-		log_debug("receive_fence_result from %d for %d clear startup",
-			  hd->nodeid, fr->nodeid);
+		log_debug("receive_fence_result %d from %d clear startup",
+			  fr->nodeid, hd->nodeid);
 	}
 
 	node = get_node_daemon(fr->nodeid);
 	if (!node) {
-		log_error("receive_fence_result from %d for %d no daemon node",
-			  hd->nodeid, fr->nodeid);
+		log_error("receive_fence_result %d from %d result %d no daemon node",
+			  fr->nodeid, hd->nodeid, fr->result);
 		return;
 	}
-
-	log_debug("receive_fence_result from %d for %d result %d walltime %llu",
-		  hd->nodeid, fr->nodeid, fr->result,
-		  (unsigned long long)fr->fence_walltime);
 
 	if (!node->need_fencing) {
 		/* should never happen */
-		log_error("receive_fence_result from %d for %d result %d no need_fencing",
-		  	  hd->nodeid, fr->nodeid, fr->result);
+		log_error("receive_fence_result %d from %d result %d no need_fencing",
+		  	  fr->nodeid, hd->nodeid, fr->result);
 		return;
 	}
+
+	now = monotime();
+
+	log_error("fence status %d receive %d from %d walltime %llu local %llu",
+		  fr->nodeid, fr->result, hd->nodeid,
+		  (unsigned long long)fr->fence_walltime,
+		  (unsigned long long)now);
 
 	if (!fr->result || (fr->result == -ECANCELED)) {
 		node->need_fencing = 0;
 		node->delay_fencing = 0;
 		node->fence_walltime = fr->fence_walltime;
-		node->fence_monotime = monotime();
+		node->fence_monotime = now;
 		node->fence_actor_done = hd->nodeid;
 	} else {
 		/* causes the next lowest nodeid to request fencing */
