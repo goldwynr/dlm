@@ -152,6 +152,110 @@ int dlmc_dump_plocks(char *name, char *buf)
 	return do_dump(DLMC_CMD_DUMP_PLOCKS, name, buf);
 }
 
+static void print_str(char *str, int len)
+{
+	char *p;
+	int i;
+
+	p = &str[0];
+	for (i = 0; i < len-1; i++) {
+		if (str[i] == ' ') {
+			str[i] = '\0';
+			printf("    %s\n", p);
+			p = &str[i+1];
+		}
+	}
+
+	if (p)
+		printf("    %s\n", p);
+}
+
+static void print_daemon(struct dlmc_state *st, char *str, char *bin, uint32_t flags)
+{
+	printf("our_nodeid %d\n", st->nodeid);
+	print_str(str, st->str_len);
+}
+
+static void print_daemon_node(struct dlmc_state *st, char *str, char *bin, uint32_t flags)
+{
+	printf("nodeid %d\n", st->nodeid);
+	print_str(str, st->str_len);
+}
+
+int dlmc_print_status(uint32_t flags)
+{
+	struct dlmc_header h;
+	struct dlmc_state state;
+	struct dlmc_state *st;
+	char maxstr[DLMC_STATE_MAXSTR];
+	char maxbin[DLMC_STATE_MAXBIN];
+	char *str, *bin;
+	int fd, rv, off;
+
+	init_header(&h, DLMC_CMD_DUMP_STATUS, NULL, 0);
+
+	fd = do_connect(DLMC_QUERY_SOCK_PATH);
+	if (fd < 0) {
+		printf("cannot connect to dlm_controld\n");
+		rv = fd;
+		goto out;
+	}
+
+	rv = do_write(fd, &h, sizeof(h));
+	if (rv < 0) {
+		printf("cannot send to dlm_controld\n");
+		goto out_close;
+	}
+
+	st = &state;
+	str = maxstr;
+	bin = maxbin;
+	off = 0;
+
+	while (1) {
+		memset(&state, 0, sizeof(state));
+		memset(maxstr, 0, sizeof(maxstr));
+		memset(maxbin, 0, sizeof(maxbin));
+
+		rv = recv(fd, st, sizeof(struct dlmc_state), MSG_WAITALL);
+		if (!rv)
+			break;
+		if (rv != sizeof(struct dlmc_state))
+			break;
+
+		if (st->str_len) {
+			rv = recv(fd, str, st->str_len, MSG_WAITALL);
+			if (rv != st->str_len)
+				break;
+		}
+
+		if (st->bin_len) {
+			rv = recv(fd, bin, st->bin_len, MSG_WAITALL);
+			if (rv != st->bin_len)
+				break;
+		}
+
+		switch (st->type) {
+		case DLMC_STATE_DAEMON:
+			print_daemon(st, str, bin, flags);
+			break;
+		case DLMC_STATE_DAEMON_NODE:
+			print_daemon_node(st, str, bin, flags);
+			break;
+		default:
+			break;
+		}
+
+		if (rv < 0)
+			break;
+	}
+
+ out_close:
+	close(fd);
+ out:
+	return rv;
+}
+
 int dlmc_node_info(char *name, int nodeid, struct dlmc_node *node)
 {
 	struct dlmc_header h, *rh;

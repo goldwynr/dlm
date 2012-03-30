@@ -39,6 +39,7 @@
 #define OP_LOCKDEBUG			9
 #define OP_LOG_PLOCK			10
 #define OP_FENCE_ACK			11
+#define OP_STATUS			12
 
 static char *prog_name;
 static char *lsname;
@@ -314,6 +315,12 @@ static void decode_arguments(int argc, char **argv)
 		else if (!strncmp(argv[optind], "ls", 2) &&
 			   (strlen(argv[optind]) == 2)) {
 			operation = OP_LIST;
+			opt_ind = optind + 1;
+			need_lsname = 0;
+			break;
+		} else if (!strncmp(argv[optind], "status", 6) &&
+			   (strlen(argv[optind]) == 6)) {
+			operation = OP_STATUS;
 			opt_ind = optind + 1;
 			need_lsname = 0;
 			break;
@@ -1320,6 +1327,10 @@ int main(int argc, char **argv)
 
 	case OP_LIST:
 		do_list(lsname);
+		break;
+
+	case OP_STATUS:
+		dlmc_print_status(0);
 		break;
 
 	case OP_DUMP:

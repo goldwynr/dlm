@@ -54,27 +54,25 @@ struct fence_result {
 struct node_daemon {
 	struct list_head list;
 	int nodeid;
-
-	uint64_t daemon_add_time;
-	uint64_t daemon_rem_time;
-	int daemon_member;
-
 	int killed;
-
-	struct protocol proto;
-
-	struct fence_config fence_config;
-
-	int fence_in_progress_unknown;
+	int daemon_member;
 	int left_reason;
 	int recover_setup;
+	int fence_in_progress_unknown;
 	int need_fence_clear;
 	int need_fencing;
 	int delay_fencing;
 	int fence_pid;
 	int fence_pid_wait;
-	int fence_actor_done;
+	int fence_actor_done; /* for status/debug */
+	int fence_actor_last; /* for status/debug */
 	int fence_actors[MAX_NODES];
+
+	struct protocol proto;
+	struct fence_config fence_config;
+
+	uint64_t daemon_add_time;
+	uint64_t daemon_rem_time;
 	uint64_t fail_walltime;
 	uint64_t fail_monotime;
 	uint64_t fence_walltime;
@@ -553,6 +551,8 @@ static int get_fence_actor(struct node_daemon *node)
 		goto retry;
 	}
 
+	node->fence_actor_last = low;
+
 	return low;
 }
 
@@ -793,6 +793,7 @@ static void daemon_fence_work(void)
 		node->delay_fencing = 0;
 		node->fence_monotime = 0;
 		node->fence_walltime = 0;
+		node->fence_actor_last = 0;
 		node->fence_actor_done = 0;
 		node->fence_pid_wait = 0;
 		node->fence_pid = 0;
@@ -1865,6 +1866,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->delay_fencing = 0;
 			node->fence_monotime = 0;
 			node->fence_walltime = 0;
+			node->fence_actor_last = 0;
 			node->fence_actor_done = 0;
 			node->fence_pid_wait = 0;
 			node->fence_pid = 0;
@@ -2011,3 +2013,107 @@ void init_daemon(void)
 	INIT_LIST_HEAD(&startup_nodes);
 
 }
+
+static int print_state_daemon_node(struct node_daemon *node, char *str)
+{
+	snprintf(str, DLMC_STATE_MAXSTR-1,
+		 "member=%d "
+		 "killed=%d "
+		 "left_reason=%d "
+		 "need_fencing=%d "
+		 "delay_fencing=%d "
+		 "fence_pid=%d "
+		 "fence_actor_last=%d "
+		 "fence_actor_done=%d "
+		 "add_time=%llu "
+		 "rem_time=%llu "
+		 "fail_walltime=%llu "
+		 "fail_monotime=%llu "
+		 "fence_walltime=%llu "
+		 "fence_monotime=%llu ",
+		 node->daemon_member,
+		 node->killed,
+		 node->left_reason,
+		 node->need_fencing,
+		 node->delay_fencing,
+		 node->fence_pid,
+		 node->fence_actor_last,
+		 node->fence_actor_done,
+		 (unsigned long long)node->daemon_add_time,
+		 (unsigned long long)node->daemon_rem_time,
+		 (unsigned long long)node->fail_walltime,
+		 (unsigned long long)node->fail_monotime,
+		 (unsigned long long)node->fence_walltime,
+		 (unsigned long long)node->fence_monotime);
+
+	return strlen(str) + 1;
+}
+
+void send_state_daemon_nodes(int fd)
+{
+	struct node_daemon *node;
+	struct dlmc_state st;
+	char str[DLMC_STATE_MAXSTR];
+	int str_len;
+
+	list_for_each_entry(node, &daemon_nodes, list) {
+		memset(&st, 0, sizeof(st));
+		st.type = DLMC_STATE_DAEMON_NODE;
+		st.nodeid = node->nodeid;
+
+		memset(str, 0, sizeof(str));
+		str_len = print_state_daemon_node(node, str);
+
+		st.str_len = str_len;
+
+		send(fd, &st, sizeof(st), MSG_NOSIGNAL);
+		if (str_len)
+			send(fd, str, str_len, MSG_NOSIGNAL);
+	}
+}
+
+static int print_state_daemon(char *str)
+{
+	snprintf(str, DLMC_STATE_MAXSTR-1,
+		 "member_count=%d "
+		 "joined_count=%d "
+		 "remove_count=%d "
+		 "daemon_ringid=%llu "
+		 "cluster_ringid=%llu "
+		 "quorate=%d "
+		 "fence_pid=%d "
+		 "fence_in_progress_unknown=%d "
+		 "zombie_count=%d ",
+		 daemon_member_count,
+		 daemon_joined_count,
+		 daemon_remove_count,
+		 (unsigned long long)daemon_ringid.seq,
+		 (unsigned long long)cluster_ringid_seq,
+		 cluster_quorate,
+		 daemon_fence_pid,
+		 fence_in_progress_unknown,
+		 zombie_count);
+
+	return strlen(str) + 1;
+}
+
+void send_state_daemon(int fd)
+{
+	struct dlmc_state st;
+	char str[DLMC_STATE_MAXSTR];
+	int str_len;
+
+	memset(&st, 0, sizeof(st));
+	st.type = DLMC_STATE_DAEMON;
+	st.nodeid = our_nodeid;
+
+	memset(str, 0, sizeof(str));
+	str_len = print_state_daemon(str);
+
+	st.str_len = str_len;
+
+	send(fd, &st, sizeof(st), MSG_NOSIGNAL);
+	if (str_len)
+		send(fd, str, str_len, MSG_NOSIGNAL);
+}
+

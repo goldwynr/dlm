@@ -86,6 +86,7 @@ int dlmc_node_info(char *lsname, int nodeid, struct dlmc_node *node);
 int dlmc_lockspaces(int max, int *count, struct dlmc_lockspace *lss);
 int dlmc_lockspace_nodes(char *lsname, int type, int max, int *count,
 			 struct dlmc_node *nodes);
+int dlmc_print_status(uint32_t flags);
 
 #define DLMC_RESULT_REGISTER	1
 #define DLMC_RESULT_NOTIFIED	2

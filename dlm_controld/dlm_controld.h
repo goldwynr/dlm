@@ -30,6 +30,7 @@
 #define DLMC_CMD_DEADLOCK_CHECK		10
 #define DLMC_CMD_DUMP_LOG_PLOCK		11
 #define DLMC_CMD_FENCE_ACK		12
+#define DLMC_CMD_DUMP_STATUS		13
 
 struct dlmc_header {
 	unsigned int magic;
@@ -41,6 +42,22 @@ struct dlmc_header {
 	int unused1;
 	int unsued2;
 	char name[DLM_LOCKSPACE_LEN]; /* no terminating null space */
+};
+
+#define DLMC_STATE_MAXSTR       4096
+#define DLMC_STATE_MAXBIN       4096
+
+#define DLMC_STATE_DAEMON       1
+#define DLMC_STATE_DAEMON_NODE  2
+
+struct dlmc_state {
+	uint32_t type; /* DLMC_STATE_ */
+	uint32_t flags;
+	int32_t nodeid;
+	uint32_t data32;
+	uint32_t data64;
+	uint32_t str_len;
+	uint32_t bin_len;
 };
 
 #endif

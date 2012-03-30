@@ -823,6 +823,10 @@ static void *process_queries(void *arg)
 		case DLMC_CMD_LOCKSPACE_NODES:
 			query_lockspace_nodes(f, h.name, h.option, h.data);
 			break;
+		case DLMC_CMD_DUMP_STATUS:
+			send_state_daemon(f);
+			send_state_daemon_nodes(f);
+			break;
 		default:
 			break;
 		}

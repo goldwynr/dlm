@@ -339,6 +339,8 @@ void close_cpg_daemon(void);
 void process_cpg_daemon(int ci);
 void set_protocol_stateful(void);
 int set_protocol(void);
+void send_state_daemon_nodes(int fd);
+void send_state_daemon(int fd);
 
 void log_config(const struct cpg_name *group_name,
                 const struct cpg_address *member_list,
