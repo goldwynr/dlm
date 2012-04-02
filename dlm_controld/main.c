@@ -898,6 +898,21 @@ static void loop(void)
 	if (rv > 0) 
 		client_add(rv, process_cluster_cfg, cluster_dead);
 
+	rv = check_uncontrolled_lockspaces();
+	if (rv < 0)
+		goto out;
+
+	/*
+	 * unfence needs to happen after checking for uncontrolled dlm kernel
+	 * state (for which we are probably currently fenced, the state must
+	 * be cleared by a reboot).  unfence needs to happen before joining
+	 * the daemon cpg, after which it needs to be possible for someone to
+	 * fence us.
+	 */
+	rv = unfence_node(our_nodeid);
+	if (rv < 0)
+		goto out;
+
 	rv = setup_node_config();
 	if (rv < 0)
 		goto out;
@@ -906,10 +921,6 @@ static void loop(void)
 	if (rv < 0)
 		goto out;
 	client_add(rv, process_cluster, cluster_dead);
-
-	rv = check_uncontrolled_lockspaces();
-	if (rv < 0)
-		goto out;
 
 	rv = setup_misc_devices();
 	if (rv < 0)

@@ -23,9 +23,14 @@ Empty new line separates the config for each fence device.
 
 fence_all fence_foo key=val ...
 
-Special fence config format that applies to all nodes, allows
-no per node config parameters, and cannot be used with any
-other fence device configuration.
+Special fence config format that applies to all nodes and allows
+no per node config parameters.  Multiple fence devices (parallel
+or priority) cannot be used with fence_all.
+
+fence_all fence_foo ...
+unfence_all
+
+Apply unfencing to all nodes.
 
 -
 
@@ -34,6 +39,12 @@ connect <dev_name> node=<nodeid> <con_args>
 
 General fence config format, allowing per node config
 parameters.
+
+device  <dev_name> <agent> <dev_args>
+connect <dev_name> node=<nodeid> <con_args>
+unfence <dev_name>
+
+Apply unfencing to all nodes connected to this device.
 
 -
 
@@ -95,7 +106,7 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 			       struct fence_device **dev_out,
 			       struct fence_connect **con_out)
 {
-	struct fence_device *dev;
+	struct fence_device *dev = NULL;
 	struct fence_connect *con;
 	char line[MAX_LINE];
 	char unused[FENCE_CONFIG_NAME_MAX];
@@ -120,6 +131,8 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 	while (fgets(line, MAX_LINE, file)) {
 		if (line[0] == '\n')
 			break;
+		if (line[0] == ' ')
+			break;
 		if (line[0] == '#')
 			continue;
 
@@ -132,6 +145,13 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 		/* invalid config */
 		if (strncmp(line, "connect", strlen("connect")))
 			return -1;
+
+		/* once we've found the connect line we want, continue
+		   scanning lines until end of section so we pick up an
+		   unfence line at the end */
+
+		if (dev)
+			continue;
 
 		memset(con_name, 0, sizeof(con_name));
 		memset(con_args, 0, sizeof(con_args));
@@ -170,8 +190,13 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 
 		*dev_out = dev;
 		*con_out = con;
-		return 0;
 	}
+
+	if (dev && unfence)
+		dev->unfence = 1;
+
+	if (dev)
+		return 0;
 
 	return -1;
 }
@@ -233,6 +258,10 @@ int fence_config_init(struct fence_config *fc, unsigned int nodeid, char *path)
 				rv = -EINVAL;
 				goto out;
 			}
+
+			if (fgets(line, MAX_LINE, file) &&
+			    !strncmp(line, "unfence_all", strlen("unfence_all")))
+				dev->unfence = 1;
 
 			fc->dev[0] = dev;
 			fc->pos = 0;

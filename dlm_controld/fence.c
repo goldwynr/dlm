@@ -98,7 +98,7 @@ int fence_request(int nodeid, uint64_t fail_walltime, uint64_t fail_monotime,
 
 	rv = fence_config_agent_args(fc, extra, args);
 	if (rv < 0) {
-		log_error("fence request %d args error %d", nodeid, rv);
+		log_error("fence request %d config args error %d", nodeid, rv);
 		return rv;
 	}
 
@@ -174,5 +174,73 @@ int fence_result(int nodeid, int pid, int *result)
 	/* shouldn't happen */
 	log_error("fence result %d pid %d waitpid rv %d", nodeid, pid, rv);
 	return -1;
+}
+
+int unfence_node(int nodeid)
+{
+	struct fence_config config;
+	struct fence_device *dev;
+	char args[FENCE_CONFIG_ARGS_MAX];
+	char action[FENCE_CONFIG_NAME_MAX];
+	int rv, i, pid, status;
+	int error = 0;
+
+	memset(&config, 0, sizeof(config));
+
+	rv = fence_config_init(&config, nodeid, (char *)CONF_FILE_PATH);
+	if (rv < 0)
+		return 0;
+
+	memset(action, 0, sizeof(action));
+	snprintf(action, FENCE_CONFIG_NAME_MAX-1, "action=on\n");
+
+	for (i = 0; i < FENCE_CONFIG_DEVS_MAX; i++) {
+		dev = config.dev[i];
+		if (!dev)
+			break;
+		if (!dev->unfence)
+			continue;
+
+		config.pos = i;
+
+		memset(args, 0, sizeof(args));
+
+		rv = fence_config_agent_args(&config, action, args);
+		if (rv < 0) {
+			log_error("unfence %d config args error %d", nodeid, rv);
+			error = -1;
+			break;
+		}
+
+		rv = run_agent(dev->agent, args, &pid);
+		if (rv < 0) {
+			log_error("unfence %d %s %s run error %d", nodeid,
+				  dev->name, dev->agent, rv);
+			error = -1;
+			break;
+		}
+
+		log_error("unfence %d pid %d %s %s", nodeid, pid,
+			  dev->name, dev->agent);
+
+		rv = waitpid(pid, &status, 0);
+		if (rv < 0) {
+			log_error("unfence %d pid %d waitpid errno %d",
+				  nodeid, pid, errno);
+			error = -1;
+			break;
+		}
+
+		if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+			log_error("unfence %d pid %d error status %d",
+				  nodeid, pid, status);
+			error = -1;
+			break;
+		}
+	}
+
+	fence_config_free(&config);
+
+	return error;
 }
 
