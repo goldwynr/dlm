@@ -35,7 +35,17 @@ struct fence_config {
 };
 
 
+/*
+ * Returns -ENOENT if path does not exist or there is no
+ * config for nodeid in the file.
+ *
+ * Returns -EXYZ if there's a problem with the config.
+ *
+ * Returns 0 if a config was found with no problems.
+ */
+
 int fence_config_init(struct fence_config *fc, unsigned int nodeid, char *path);
+
 void fence_config_free(struct fence_config *fc);
 
 /*

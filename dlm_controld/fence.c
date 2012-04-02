@@ -188,8 +188,15 @@ int unfence_node(int nodeid)
 	memset(&config, 0, sizeof(config));
 
 	rv = fence_config_init(&config, nodeid, (char *)CONF_FILE_PATH);
-	if (rv < 0)
+	if (rv == -ENOENT) {
+		/* file doesn't exist or doesn't contain config for nodeid */
 		return 0;
+	}
+	if (rv < 0) {
+		/* there's a problem with the config */
+		log_error("fence config %d error %d", nodeid, rv);
+		return rv;
+	}
 
 	memset(action, 0, sizeof(action));
 	snprintf(action, FENCE_CONFIG_NAME_MAX-1, "action=on\n");

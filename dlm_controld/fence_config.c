@@ -137,14 +137,15 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 			continue;
 
 		if (!strncmp(line, "unfence", strlen("unfence"))) {
-			/* TODO: verify dev_name matches */
+			if (!strstr(line, dev_name))
+				return -EINVAL;
 			unfence = 1;
 			continue;
 		}
 
 		/* invalid config */
 		if (strncmp(line, "connect", strlen("connect")))
-			return -1;
+			return -EINVAL;
 
 		/* once we've found the connect line we want, continue
 		   scanning lines until end of section so we pick up an
@@ -158,11 +159,11 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 
 		rv = sscanf(line, "%s %s %[^\n]s", unused, con_name, con_args);
 		if (rv < 3)
-			return -1;
+			return -EINVAL;
 
 		/* invalid config */
 		if (strncmp(dev_name, con_name, FENCE_CONFIG_NAME_MAX))
-			return -1;
+			return -EINVAL;
 
 		/* skip connection for another node */
 		if (con_args_nodeid(con_args) != nodeid)
@@ -197,8 +198,8 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 
 	if (dev)
 		return 0;
-
-	return -1;
+	else
+		return -ENOENT;
 }
 
 void fence_config_free(struct fence_config *fc)
@@ -232,7 +233,7 @@ int fence_config_init(struct fence_config *fc, unsigned int nodeid, char *path)
 
 	file = fopen(path, "r");
 	if (!file)
-		return -1;
+		return -ENOENT;
 
 	while (fgets(line, MAX_LINE, file)) {
 		if (line[0] == '#')
@@ -272,18 +273,33 @@ int fence_config_init(struct fence_config *fc, unsigned int nodeid, char *path)
 		if (strncmp(line, "device", strlen("device")))
 			continue;
 
-		/* read connect and unfence lines following a device line */
+		dev = NULL;
+		con = NULL;
 
+		/* read connect and unfence lines following a device line */
 		rv = read_config_section(nodeid, file, line, &dev, &con);
-		if (rv < 0)
+
+		/* nodeid not listed in this section */
+		if (rv == -ENOENT)
 			continue;
+
+		/* an error parsing the section, may be config to free */
+		if (rv < 0) {
+			if (dev)
+				free(dev);
+			if (con)
+				free(con);
+			goto out;
+		}
 
 		fc->dev[pos] = dev;
 		fc->con[pos] = con;
 		pos++;
 	}
 
-	if (pos)
+	if (!pos)
+		rv = -ENOENT;
+	else
 		rv = 0;
  out:
 	fclose(file);

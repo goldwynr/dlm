@@ -434,6 +434,7 @@ static struct node_daemon *add_node_daemon(int nodeid)
 {
 	struct node_daemon *node;
 	struct fence_config *fc;
+	int rv;
 
 	node = get_node_daemon(nodeid);
 	if (node)
@@ -462,12 +463,18 @@ static struct node_daemon *add_node_daemon(int nodeid)
 
 	/* explicit config file setting has second priority */
 
-	fence_config_init(fc, (unsigned int)nodeid, (char *)CONF_FILE_PATH);
+	rv = fence_config_init(fc, (unsigned int)nodeid, (char *)CONF_FILE_PATH);
+	if (!rv)
+		goto out;
 
-	/* no command line, no config file, use default, third priority */
+	/* no command line, no config file, so use default */
 
-	if (!fc->dev[0] && fence_all_agent[0])
+	if (rv == -ENOENT) {
 		fc->dev[0] = &fence_all_device;
+		goto out;
+	}
+
+	log_error("fence config %d error %d", nodeid, rv);
  out:
 	return node;
 }
