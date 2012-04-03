@@ -64,6 +64,7 @@ struct node_daemon {
 	int delay_fencing;
 	int fence_pid;
 	int fence_pid_wait;
+	int fence_result_wait;
 	int fence_actor_done; /* for status/debug */
 	int fence_actor_last; /* for status/debug */
 	int fence_actors[MAX_NODES];
@@ -625,7 +626,7 @@ static void fence_pid_cancel(int nodeid, int pid)
 {
 	int rv, result = 0;
 
-	log_debug("fence_pid_cancel nodeid %d pid %d", nodeid, pid);
+	log_debug("fence_pid_cancel nodeid %d pid %d sigkill", nodeid, pid);
 
 	kill(pid, SIGKILL);
 	usleep(500000);
@@ -724,11 +725,6 @@ static void fence_pid_cancel(int nodeid, int pid)
  * later same as case B above
  */
 
-/*
- * TODO: limit to one agent running at once, in case both
- * instances need to log into the same switch, for example.
- */
-
 static void daemon_fence_work(void)
 {
 	struct node_daemon *node, *safe;
@@ -806,6 +802,7 @@ static void daemon_fence_work(void)
 		node->fence_actor_done = 0;
 		node->fence_pid_wait = 0;
 		node->fence_pid = 0;
+		node->fence_result_wait = 0;
 		node->fence_config.pos = 0;
 		node->left_reason = REASON_STARTUP_FENCING;
 		node->fail_monotime = cluster_joined_monotime - 1;
@@ -825,6 +822,11 @@ static void daemon_fence_work(void)
 
 		if (node->fence_pid_wait)
 			continue;
+
+		if (node->fence_result_wait) {
+			log_debug("fence request %d result_wait", node->nodeid);
+			continue;
+		}
 
 		if (is_clean_daemon_member(node->nodeid)) {
 			/*
@@ -887,9 +889,8 @@ static void daemon_fence_work(void)
 				   node->left_reason,
 				   &pid);
 		if (rv < 0) {
-			/* FIXME: keep ourself from retrying between here
-			 * and receiving this message */
 			send_fence_result(node->nodeid, rv, 0, time(NULL));
+			node->fence_result_wait = 1;
 			continue;
 		}
 
@@ -909,12 +910,13 @@ static void daemon_fence_work(void)
 		if (node->delay_fencing)
 			continue;
 
+		if (node->fence_result_wait) {
+			log_debug("fence wait %d result_wait", node->nodeid);
+			continue;
+		}
+
 		if (!node->fence_pid_wait) {
-			/*
-			 * another node is the actor, or we were actor,
-			 * and are between our own send_fence_result()
-			 * and receive_fence_result()
-			 */
+			/* another node is the actor */
 			log_debug("fence wait %d for done", node->nodeid);
 			continue;
 		}
@@ -978,15 +980,19 @@ static void daemon_fence_work(void)
 			   parallel, set it to run next, otherwise success */
 
 			rv = fence_config_next_parallel(&node->fence_config);
-			if (rv < 0)
+			if (rv < 0) {
 				send_fence_result(nodeid, 0, 0, time(NULL));
+				node->fence_result_wait = 1;
+			}
 		} else {
 			/* agent exit 1, if there's another agent to run at
 			   next priority, set it to run next, otherwise fail */
 
 			rv = fence_config_next_priority(&node->fence_config);
-			if (rv < 0)
+			if (rv < 0) {
 				send_fence_result(nodeid, result, 0, time(NULL));
+				node->fence_result_wait = 1;
+			}
 		}
 	}
 
@@ -1237,6 +1243,16 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 		  	  fr->nodeid, hd->nodeid, fr->result);
 		return;
 	}
+
+	if ((hd->nodeid == our_nodeid) && !node->fence_result_wait && (fr->result != -ECANCELED)) {
+		/* should never happen */
+		log_error("receive_fence_result %d from %d result %d no fence_result_wait",
+			  fr->nodeid, hd->nodeid, fr->result);
+		/* should we ignore and return here? */
+	}
+
+	if ((hd->nodeid == our_nodeid) && (fr->result != -ECANCELED))
+		node->fence_result_wait = 0;
 
 	now = monotime();
 
@@ -1887,6 +1903,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->fence_actor_done = 0;
 			node->fence_pid_wait = 0;
 			node->fence_pid = 0;
+			node->fence_result_wait = 0;
 			node->fence_config.pos = 0;
 			node->left_reason = reason;
 			node->fail_monotime = now;
@@ -2040,6 +2057,8 @@ static int print_state_daemon_node(struct node_daemon *node, char *str)
 		 "need_fencing=%d "
 		 "delay_fencing=%d "
 		 "fence_pid=%d "
+		 "fence_pid_wait=%d "
+		 "fence_result_wait=%d "
 		 "fence_actor_last=%d "
 		 "fence_actor_done=%d "
 		 "add_time=%llu "
@@ -2054,6 +2073,8 @@ static int print_state_daemon_node(struct node_daemon *node, char *str)
 		 node->need_fencing,
 		 node->delay_fencing,
 		 node->fence_pid,
+		 node->fence_pid_wait,
+		 node->fence_result_wait,
 		 node->fence_actor_last,
 		 node->fence_actor_done,
 		 (unsigned long long)node->daemon_add_time,
