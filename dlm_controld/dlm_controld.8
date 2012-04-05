@@ -1,313 +1,104 @@
-.TH DLM_CONTROLD 8 2009-01-18 cluster cluster
+.TH DLM_CONTROLD 8 2012-04-05 dlm dlm
 
 .SH NAME
-dlm_controld \- daemon that configures dlm according to cluster events
+dlm_controld \- dlm cluster control daemon
 
 .SH SYNOPSIS
 .B dlm_controld
 [OPTIONS]
 
 .SH DESCRIPTION
-The dlm lives in the kernel, and the cluster infrastructure (corosync
-membership and group management) lives in user space.  The dlm in the
-kernel needs to adjust/recover for certain cluster events.  It's the job
-of dlm_controld to receive these events and reconfigure the kernel dlm as
-needed.  dlm_controld controls and configures the dlm through sysfs and
-configfs files that are considered dlm-internal interfaces.
-
-The cman init script usually starts the dlm_controld daemon.
+The kernel dlm requires a user daemon to manage lockspace membership.
+dlm_controld manages lockspace membership using corosync cpg groups,
+and translates membership changes into dlm kernel recovery events.
+dlm_controld also manages posix locks for cluster file systems using
+the dlm.
 
 .SH OPTIONS
-Command line options override a corresponding setting in cluster.conf.
-
-.TP
-.B \-D
-Enable debugging to stderr and don't fork.
+Command line options override a corresponding setting in
+.BR dlm.conf (5).
 .br
-See also
-.B dlm_tool dump
-in
-.BR dlm_tool (8).
+For default settings, see dlm_controld -h.
 
-.TP
-.B \-L
-Enable debugging to log file.
-.br
-See also
-.B logging
-in
-.BR cluster.conf (5).
+.B --daemon_debug | -D
+        enable debugging to stderr and don't fork
 
-.TP
-.B \-K
-Enable kernel dlm debugging messages.
-.br
-See also
-.B log_debug
-below.
+.B --log_debug | -K
+        enable kernel dlm debugging messages
 
-.TP
-.BI \-r " num"
-dlm kernel lowcomms protocol, 0 tcp, 1 sctp, 2 detect.
-2 selects tcp if corosync rrp_mode is "none", otherwise sctp.
-.br
-Default 2.
+.B --protocol | -r
+.I str
+        dlm kernel lowcomms protocol: tcp, sctp, detect
 
-.TP
-.BI \-g " num"
-groupd compatibility mode, 0 off, 1 on.
-.br
-Default 0.
+.B --debug_logfile | -L
+        write debugging to log file
 
-.TP
-.BI \-f " num"
-Enable (1) or disable (0) fencing recovery dependency.
-.br
-Default 1.
+.B --enable_plock | -p
+0|1
+        enable/disable posix lock support for cluster fs
 
-.TP
-.BI \-q " num"
-Enable (1) or disable (0) quorum recovery dependency.
-.br
-Default 0.
+.B --plock_debug | -P
+        enable plock debugging
 
-.TP
-.BI \-d " num"
-Enable (1) or disable (0) deadlock detection code.
-.br
-Default 0.
+.B --plock_rate_limit | -l
+.I int
+        limit rate of plock operations (0 for none)
 
-.TP
-.BI \-p " num"
-Enable (1) or disable (0) plock code for cluster fs.
-.br
-Default 1.
+.B --plock_ownership | -o
+0|1
+        enable/disable plock ownership
 
-.TP
-.BI \-l " num"
-Limit the rate of plock operations, 0 for no limit.
-.br
-Default 0.
+.B --drop_resources_time | -t
+.I int
+        plock ownership drop resources time (milliseconds)
 
-.TP
-.BI \-o " num"
-Enable (1) or disable (0) plock ownership.
-.br
-Default 1.
+.B --drop_resources_count | -c
+.I int
+        plock ownership drop resources count
 
-.TP
-.BI \-t " ms"
-Plock ownership drop resources time (milliseconds).
-.br
-Default 10000.
+.B --drop_resources_age | -a
+.I int
+        plock ownership drop resources age (milliseconds)
 
-.TP
-.BI \-c " num"
-Plock ownership drop resources count.
-.br
-Default 10.
+.B --post_join_delay | -j
+.I int
+        seconds to delay fencing after cluster join
 
-.TP
-.BI \-a " ms"
-Plock ownership drop resources age (milliseconds).
-.br
-Default 10000.
+.B --enable_fencing | -f
+0|1
+        enable/disable fencing
 
-.TP
-.B \-P
-Enable plock debugging messages (can produce excessive output).
+.B --enable_concurrent_fencing
+0|1
+        enable/disable concurrent fencing
 
-.TP
-.B \-h
-Print a help message describing available options, then exit.
+.B --enable_startup_fencing | -s
+0|1
+        enable/disable startup fencing
 
-.TP
-.B \-V
-Print program version information, then exit.
+.B --enable_quorum_fencing | -q
+0|1
+        enable/disable quorum requirement for fencing
 
+.B --enable_quorum_lockspace
+0|1
+        enable/disable quorum requirement for lockspace operations
 
-.SH FILES
-.BR cluster.conf (5)
-is usually located at /etc/cluster/cluster.conf.  It is not read directly.
-Other cluster components load the contents into memory, and the values are
-accessed through the libccs library.
+.B --fence_all
+.I str
+        fence all nodes with this agent
 
-Configuration options for dlm (kernel) and dlm_controld are added to the
-<dlm /> section of cluster.conf, within the top level <cluster> section.
+.B --unfence_all
+.I str
+        unfence all nodes with this agent
 
-.SS Kernel options
+.B --help | -h
+        print this help, then exit
 
-.TP
-.B protocol
-The network
-.B protocol
-can be set to tcp, sctp or detect which selects tcp or sctp based on
-the corosync rrp_mode configuration (redundant ring protocol).
-The rrp_mode "none" results in tcp.  Default detect.
-
-<dlm protocol="detect"/>
-
-.TP
-.B timewarn
-After waiting
-.B timewarn
-centiseconds, the dlm will emit a warning via netlink.  This only applies
-to lockspaces created with the DLM_LSFL_TIMEWARN flag, and is used for
-deadlock detection.  Default 500 (5 seconds).
-
-<dlm timewarn="500"/>
-
-.TP
-.B log_debug
-DLM kernel debug messages can be enabled by setting
-.B log_debug
-to 1.  Default 0.
-
-<dlm log_debug="0"/>
-
-.TP
-.B clusternode/weight
-The lock directory
-.B weight
-can be specified one the clusternode lines.  Weights would usually be
-used in the lock server configurations shown below instead.
-
-<clusternode name="node01" nodeid="1" weight="1"/>
-
-.SS Daemon options
-
-.TP
-.B enable_fencing
-See command line description.
-
-<dlm enable_fencing="1"/>
-
-.TP
-.B enable_quorum
-See command line description.
-
-<dlm enable_quorum="0"/>
-
-.TP
-.B enable_deadlk
-See command line description.
-
-<dlm enable_deadlk="0"/>
-
-.TP
-.B enable_plock
-See command line description.
-
-<dlm enable_plock="1"/>
-
-.TP
-.B plock_rate_limit
-See command line description.
-
-<dlm plock_rate_limit="0"/>
-
-.TP
-.B plock_ownership
-See command line description.
-
-<dlm plock_ownership="1"/>
-
-.TP
-.B drop_resources_time
-See command line description.
-
-<dlm drop_resources_time="10000"/>
-
-.TP
-.B drop_resources_count
-See command line description.
-
-<dlm drop_resources_count="10"/>
-
-.TP
-.B drop_resources_age
-See command line description.
-
-<dlm drop_resources_age="10000"/>
-
-.TP
-.B plock_debug
-Enable (1) or disable (0) plock debugging messages (can produce excessive
-output). Default 0.
-
-<dlm plock_debug="0"/>
-
-
-.SS Disabling resource directory
-
-Lockspaces usually use a resource directory to keep track of which node is
-the master of each resource.  The dlm can operate without the resource
-directory, though, by statically assigning the master of a resource using
-a hash of the resource name.  To enable, set the per-lockspace
-.B nodir
-option to 1.
-
-.nf
-<dlm>
-  <lockspace name="foo" nodir="1">
-</dlm>
-.fi
-
-.SS Lock-server configuration
-
-The nodir setting can be combined with node weights to create a
-configuration where select node(s) are the master of all resources/locks.
-These
-.B master
-nodes can be viewed as "lock servers" for the other nodes.
-
-.nf
-<dlm>
-  <lockspace name="foo" nodir="1">
-    <master name="node01"/>
-  </lockspace>
-</dlm>
-
-or,
-
-<dlm>
-  <lockspace name="foo" nodir="1">
-    <master name="node01"/>
-    <master name="node02"/>
-  </lockspace>
-</dlm>
-.fi
-
-Lock management will be partitioned among the available masters.  There
-can be any number of masters defined.  The designated master nodes will
-master all resources/locks (according to the resource name hash).  When no
-masters are members of the lockspace, then the nodes revert to the common
-fully-distributed configuration.  Recovery is faster, with little
-disruption, when a non-master node joins/leaves.
-
-There is no special mode in the dlm for this lock server configuration,
-it's just a natural consequence of combining the "nodir" option with node
-weights.  When a lockspace has master nodes defined, the master has a
-default weight of 1 and all non-master nodes have weight of 0.  An explicit
-non-zero
-.B weight
-can also be assigned to master nodes, e.g.
-
-.nf
-<dlm>
-  <lockspace name="foo" nodir="1">
-    <master name="node01" weight="2"/>
-    <master name="node02" weight="1"/>
-  </lockspace>
-</dlm>
-.fi
-
-In which case node01 will master 2/3 of the total resources and node2 will
-master the other 1/3.
+.B --version | -V
+        Print program version information, then exit
 
 .SH SEE ALSO
 .BR dlm_tool (8),
-.BR fenced (8),
-.BR cman (5),
-.BR cluster.conf (5)
+.BR dlm.conf (5)
 

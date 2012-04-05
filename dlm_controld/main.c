@@ -1183,7 +1183,8 @@ static void print_usage(void)
 	printf("\n");
 	printf("dlm_controld [options]\n");
 	printf("\n");
-	printf("Options:\n");
+	printf("Option [arg]\n");
+	printf("Description [default]\n");
 	printf("\n");
 
 	for (i = 0; i < dlm_options_max; i++) {
@@ -1264,7 +1265,7 @@ static void set_opt_defaults(void)
 	set_opt_default(enable_fscontrol_ind,
 			"enable_fscontrol", '\0', req_arg_bool,
 			0, NULL,
-			"enable/disable recovery coordination with fs controld");
+			""); /* do not advertise */
 
 	set_opt_default(enable_plock_ind,
 			"enable_plock", 'p', req_arg_bool,
