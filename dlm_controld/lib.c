@@ -142,6 +142,11 @@ int dlmc_dump_debug(char *buf)
 	return do_dump(DLMC_CMD_DUMP_DEBUG, NULL, buf);
 }
 
+int dlmc_dump_config(char *buf)
+{
+	return do_dump(DLMC_CMD_DUMP_CONFIG, NULL, buf);
+}
+
 int dlmc_dump_log_plock(char *buf)
 {
 	return do_dump(DLMC_CMD_DUMP_LOG_PLOCK, NULL, buf);

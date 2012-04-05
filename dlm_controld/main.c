@@ -8,6 +8,7 @@
 
 #define EXTERN
 #include "dlm_daemon.h"
+#include <ctype.h>
 #include <pthread.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -443,6 +444,46 @@ static void query_dump_debug(int fd)
 		send(fd, copy_buf, len, MSG_NOSIGNAL);
 }
 
+static void copy_options(char *buf, int *len)
+{
+	struct dlm_option *o;
+	char tmp[256];
+	int i, ret, pos = 0;
+
+	for (i = 0; i < dlm_options_max; i++) {
+		o = &dlm_options[i];
+
+		memset(tmp, 0, sizeof(tmp));
+
+		if (o->req_arg == req_arg_str)
+			snprintf(tmp, 255, "%s=%s\n", o->name, o->use_str);
+		else
+			snprintf(tmp, 255, "%s=%d\n", o->name, o->use_int);
+
+		if (pos + strlen(tmp) >= LOG_DUMP_SIZE)
+			break;
+
+		ret = sprintf(buf + pos, "%s", tmp);
+		pos += ret;
+	}
+
+	*len = pos;
+}
+
+static void query_dump_config(int fd)
+{
+	struct dlmc_header h;
+	int len = 0;
+
+	copy_options(copy_buf, &len);
+
+	init_header(&h, DLMC_CMD_DUMP_CONFIG, NULL, 0, len);
+	send(fd, &h, sizeof(h), MSG_NOSIGNAL);
+
+	if (len)
+		send(fd, copy_buf, len, MSG_NOSIGNAL);
+}
+
 static void query_dump_log_plock(int fd)
 {
 	struct dlmc_header h;
@@ -658,7 +699,7 @@ static void process_connection(int ci)
 		break;
 
 	case DLMC_CMD_FS_REGISTER:
-		if (cfgd_enable_fscontrol) {
+		if (opt(enable_fscontrol_ind)) {
 			rv = fs_register_add(h.name);
 			ls = find_ls(h.name);
 			if (ls)
@@ -804,6 +845,9 @@ static void *process_queries(void *arg)
 		switch (h.command) {
 		case DLMC_CMD_DUMP_DEBUG:
 			query_dump_debug(f);
+			break;
+		case DLMC_CMD_DUMP_CONFIG:
+			query_dump_config(f);
 			break;
 		case DLMC_CMD_DUMP_LOG_PLOCK:
 			query_dump_log_plock(f);
@@ -951,7 +995,7 @@ static void loop(void)
 		goto out;
 
 #if 0
-	if (cfgd_enable_deadlk) {
+	if (opt(enable_deadlk_ind)) {
 		rv = setup_netlink();
 		if (rv < 0)
 			goto out;
@@ -1114,174 +1158,367 @@ static void unlink_lockfile(int fd, const char *dir, const char *name)
 	close(fd);
 }
 
+static const char *req_arg_s(int a)
+{
+	switch (a) {
+	case no_arg:
+		return "";
+	case req_arg_bool:
+		return "0|1";
+	case req_arg_int:
+		return "<int>";
+	case req_arg_str:
+		return "<str>";
+	default:
+		return "<arg>";
+	}
+}
+
 static void print_usage(void)
 {
+	struct dlm_option *o;
+	int i;
+
 	printf("Usage:\n");
 	printf("\n");
 	printf("dlm_controld [options]\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("\n");
-	printf("  -D		Enable debugging to stderr and don't fork\n");
-	printf("  -L		Enable debugging to log file\n");
-	printf("  -K		Enable kernel dlm debugging messages\n");
-	printf("  -r <num>      dlm kernel lowcomms protocol, 0 tcp, 1 sctp, 2 detect\n");
-	printf("                2 selects tcp if corosync rrp_mode is \"none\", otherwise sctp\n");
-	printf("                Default is 2\n");
 
-	printf("  -j <sec>      Seconds to delay fencing after cluster join\n");
-	printf("                Default is %d\n", DEFAULT_POST_JOIN_DELAY);
-	printf("  -f <num>	Enable (1) or disable (0) fencing\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
-	printf("  -s <num>	Enable (1) or disable (0) startup fencing\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_STARTUP_FENCING);
-	printf("  -q <num>	Enable (1) or disable (0) quorum wait before fencing\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM_FENCING);
+	for (i = 0; i < dlm_options_max; i++) {
+		o = &dlm_options[i];
 
-	printf("  -p <num>	Enable (1) or disable (0) plock code for cluster fs\n");
-	printf("		Default is %d\n", DEFAULT_ENABLE_PLOCK);
-	printf("  -P		Enable plock debugging\n");
-	printf("  -l <limit>	Limit the rate of plock operations\n");
-	printf("		Default is %d, set to 0 for no limit\n", DEFAULT_PLOCK_RATE_LIMIT);
-	printf("  -o <n>	Enable (1) or disable (0) plock ownership\n");
-	printf("		Default is %d\n", DEFAULT_PLOCK_OWNERSHIP);
-	printf("  -t <ms>	plock ownership drop resources time (milliseconds)\n");
-	printf("		Default is %u\n", DEFAULT_DROP_RESOURCES_TIME);
-	printf("  -c <num>	plock ownership drop resources count\n");
-	printf("		Default is %u\n", DEFAULT_DROP_RESOURCES_COUNT);
-	printf("  -a <ms>	plock ownership drop resources age (milliseconds)\n");
-	printf("		Default is %u\n", DEFAULT_DROP_RESOURCES_AGE);
+		/* don't advertise options with no description */
+		if (!strlen(o->desc))
+			continue;
 
-	printf("  -h		Print this help, then exit\n");
-	printf("  -V		Print program version information, then exit\n");
+		printf("  --%s", o->name);
+
+		if (o->letter) {
+			printf(" | -%c", o->letter);
+			if (o->req_arg)
+				printf(" %s", req_arg_s(o->req_arg));
+		} else {
+			if (o->req_arg)
+				printf(" %s", req_arg_s(o->req_arg));
+		}
+
+		printf("\n");
+
+		printf("        %s", o->desc);
+
+		if (o->req_arg == req_arg_str)
+			printf(" [%s]\n", o->default_str ? o->default_str : "");
+		else if (o->req_arg == req_arg_int)
+			printf(" [%d]\n", o->default_int);
+		else if (o->req_arg == req_arg_bool)
+			printf(" [%d]\n", o->default_int);
+		else
+			printf("\n");
+
+		printf("\n");
+	}
 }
 
-#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:s:e:j:"
-
-static void read_arguments(int argc, char **argv)
+static void set_opt_default(int ind, const char *name, char letter, int arg_type,
+			    int default_int, const char *default_str, const char *desc)
 {
-	int cont = 1;
-	int optchar;
+	dlm_options[ind].name = name;
+	dlm_options[ind].letter = letter;
+	dlm_options[ind].req_arg = arg_type;
+	dlm_options[ind].desc = desc;
+	dlm_options[ind].default_int = default_int;
+	dlm_options[ind].default_str = default_str;
+	dlm_options[ind].use_int = default_int;
+	dlm_options[ind].use_str = (char *)default_str;
+}
 
-	while (cont) {
-		optchar = getopt(argc, argv, OPTION_STRING);
+static void set_opt_defaults(void)
+{
+	set_opt_default(daemon_debug_ind,
+			"daemon_debug", 'D', no_arg,
+			0, NULL,
+			"enable debugging to stderr and don't fork");
 
-		switch (optchar) {
-		case 'D':
-			daemon_debug_opt = 1;
+	set_opt_default(log_debug_ind,
+			"log_debug", 'K', no_arg,
+			0, NULL,
+			"enable kernel dlm debugging messages");
+
+	set_opt_default(timewarn_ind,
+			"timewarn", '\0', req_arg_int,
+			0, NULL,
+			""); /* do not advertise */
+
+	set_opt_default(protocol_ind,
+			"protocol", 'r', req_arg_str,
+			-1, "detect",
+			"dlm kernel lowcomms protocol: tcp, sctp, detect");
+
+	set_opt_default(debug_logfile_ind,
+			"debug_logfile", 'L', no_arg,
+			0, NULL,
+			"write debugging to log file");
+
+	set_opt_default(enable_fscontrol_ind,
+			"enable_fscontrol", '\0', req_arg_bool,
+			0, NULL,
+			"enable/disable recovery coordination with fs controld");
+
+	set_opt_default(enable_plock_ind,
+			"enable_plock", 'p', req_arg_bool,
+			1, NULL,
+			"enable/disable posix lock support for cluster fs");
+
+	set_opt_default(plock_debug_ind,
+			"plock_debug", 'P', no_arg,
+			0, NULL,
+			"enable plock debugging");
+
+	set_opt_default(plock_rate_limit_ind,
+			"plock_rate_limit", 'l', req_arg_int,
+			0, NULL,
+			"limit rate of plock operations (0 for none)");
+
+	set_opt_default(plock_ownership_ind,
+			"plock_ownership", 'o', req_arg_bool,
+			0, NULL,
+			"enable/disable plock ownership");
+
+	set_opt_default(drop_resources_time_ind,
+			"drop_resources_time", 't', req_arg_int,
+			10000, NULL,
+			"plock ownership drop resources time (milliseconds)");
+
+	set_opt_default(drop_resources_count_ind,
+			"drop_resources_count", 'c', req_arg_int,
+			10, NULL,
+			"plock ownership drop resources count");
+
+	set_opt_default(drop_resources_age_ind,
+			"drop_resources_age", 'a', req_arg_int,
+			10000, NULL,
+			"plock ownership drop resources age (milliseconds)");
+
+	set_opt_default(post_join_delay_ind,
+			"post_join_delay", 'j', req_arg_int,
+			30, NULL,
+			"seconds to delay fencing after cluster join");
+
+	set_opt_default(enable_fencing_ind,
+			"enable_fencing", 'f', req_arg_bool,
+			1, NULL,
+			"enable/disable fencing");
+
+	set_opt_default(enable_concurrent_fencing_ind,
+			"enable_concurrent_fencing", '\0', req_arg_bool,
+			0, NULL,
+			"enable/disable concurrent fencing");
+
+	set_opt_default(enable_startup_fencing_ind,
+			"enable_startup_fencing", 's', req_arg_bool,
+			1, NULL,
+			"enable/disable startup fencing");
+
+	set_opt_default(enable_quorum_fencing_ind,
+			"enable_quorum_fencing", 'q', req_arg_bool,
+			1, NULL,
+			"enable/disable quorum requirement for fencing");
+
+	set_opt_default(enable_quorum_lockspace_ind,
+			"enable_quorum_lockspace", '\0', req_arg_bool,
+			1, NULL,
+			"enable/disable quorum requirement for lockspace operations");
+
+	set_opt_default(fence_all_ind,
+			"fence_all", '\0', req_arg_str,
+			-1, "dlm_stonith",
+			"fence all nodes with this agent");
+
+	set_opt_default(unfence_all_ind,
+			"unfence_all", '\0', req_arg_str,
+			-1, NULL,
+			"unfence all nodes with this agent");
+
+	set_opt_default(help_ind,
+			"help", 'h', no_arg,
+			-1, NULL,
+			"print this help, then exit");
+
+	set_opt_default(version_ind,
+			"version", 'V', no_arg,
+			-1, NULL,
+			"Print program version information, then exit");
+}
+
+static int get_ind_name(char *s)
+{
+	char name[PATH_MAX];
+	char *p = s;
+	int i;
+
+	memset(name, 0, sizeof(name));
+
+	for (i = 0; i < strlen(s); i++) {
+		if (*p == '=')
 			break;
-
-		case 'L':
-			optd_debug_logfile = 1;
-			cfgd_debug_logfile = 1;
+		if (*p == ' ')
 			break;
+		name[i] = *p;
+		p++;
+	}
 
-		case 'K':
-			optk_debug = 1;
-			cfgk_debug = 1;
-			break;
+	for (i = 0; i < dlm_options_max; i++) {
+		if (!strcmp(dlm_options[i].name, name))
+			return i;
+	}
+	return -1;
+}
 
-		case 'r':
-			optk_protocol = 1;
-			cfgk_protocol = atoi(optarg);
-			break;
+static int get_ind_letter(char c)
+{
+	int i;
 
-		/* fencing options */
+	for (i = 0; i < dlm_options_max; i++) {
+		if (dlm_options[i].letter == c)
+			return i;
+	}
+	return -1;
+}
 
-		case 'j':
-			optd_post_join_delay = 1;
-			cfgd_post_join_delay = atoi(optarg);
-			break;
+struct dlm_option *get_dlm_option(char *name)
+{
+	int i;
+	i = get_ind_name(name);
+	if (i < 0)
+		return NULL;
+	return &dlm_options[i];
+}
 
-		case 'f':
-			optd_enable_fencing = 1;
-			cfgd_enable_fencing = atoi(optarg);
-			break;
+static void set_opt_cli(int argc, char **argv)
+{
+	struct dlm_option *o;
+	char *arg1 = argv[1];
+	char *p, *arg_str;
+	char bundled_letters[8];
+	int b, blc = 0, blc_max = 8;
+	int debug_options = 0;
+	int i, ind;
 
-		case 's':
-			optd_enable_startup_fencing = 1;
-			cfgd_enable_startup_fencing = atoi(optarg);
+	if (argc < 2 || !strcmp(arg1, "help") || !strcmp(arg1, "--help") || !strcmp(arg1, "-h")) {
+		print_usage();
+		exit(EXIT_SUCCESS);
+	}
 
-		case 'q':
-			optd_enable_quorum_fencing = 1;
-			cfgd_enable_quorum_fencing = atoi(optarg);
-			break;
-
-		case 'e':
-			optd_fence_all_agent = 1;
-			strcpy(fence_all_agent, optarg);
-			break;
-
-
-		/* plock options */
-
-		case 'p':
-			optd_enable_plock = 1;
-			cfgd_enable_plock = atoi(optarg);
-			break;
-
-		case 'P':
-			optd_plock_debug = 1;
-			cfgd_plock_debug = 1;
-			break;
-
-		case 'l':
-			optd_plock_rate_limit = 1;
-			cfgd_plock_rate_limit = atoi(optarg);
-			break;
-
-		case 'o':
-			optd_plock_ownership = 1;
-			cfgd_plock_ownership = atoi(optarg);
-			break;
-
-		case 't':
-			optd_drop_resources_time = 1;
-			cfgd_drop_resources_time = atoi(optarg);
-			break;
-
-		case 'c':
-			optd_drop_resources_count = 1;
-			cfgd_drop_resources_count = atoi(optarg);
-			break;
-
-		case 'a':
-			optd_drop_resources_age = 1;
-			cfgd_drop_resources_age = atoi(optarg);
-			break;
-
-		case 'h':
-			print_usage();
-			exit(EXIT_SUCCESS);
-			break;
-
-		case 'V':
-			printf("dlm_controld %s (built %s %s)\n",
-				RELEASE_VERSION, __DATE__, __TIME__);
+	if (!strcmp(arg1, "version") || !strcmp(arg1, "--version") || !strcmp(arg1, "-V")) {
+		printf("dlm_controld %s (built %s %s)\n",
+			RELEASE_VERSION, __DATE__, __TIME__);
 			printf("%s\n", REDHAT_COPYRIGHT);
-			exit(EXIT_SUCCESS);
-			break;
+		exit(EXIT_SUCCESS);
+	}
 
-		case ':':
-		case '?':
-			fprintf(stderr, "Please use '-h' for usage.\n");
+	for (i = 1; i < argc; ) {
+		p = argv[i++];
+
+		if (!strcmp(p, "--debug_options")) {
+			debug_options = 1;
+			continue;
+		}
+
+		if (p[0] == '-' && p[1] == '-')
+			ind = get_ind_name(p + 2);
+		else if (p[0] == '-')
+			ind = get_ind_letter(p[1]);
+		else {
+			fprintf(stderr, "unknown option arg %s\n", p);
 			exit(EXIT_FAILURE);
-			break;
+		}
 
-		case EOF:
-			cont = 0;
-			break;
-
-		default:
-			fprintf(stderr, "unknown option: %c\n", optchar);
+		if (ind < 0) {
+			fprintf(stderr, "unknown option %s\n", p);
 			exit(EXIT_FAILURE);
-			break;
-		};
+		}
+
+		o = &dlm_options[ind];
+		o->cli_set++;
+
+		if (!o->req_arg) {
+			/* "-x" has same effect as "-x 1" */
+			o->cli_int = 1;
+			o->use_int = 1;
+
+			/* save bundled, arg-less, single letters, e.g. -DKP */
+			if ((p[0] == '-') && isalpha(p[1]) && (strlen(p) > 2)) {
+				for (b = 2; b < strlen(p) && blc < blc_max; b++) {
+					if (!isalpha(p[b]))
+						break;
+					bundled_letters[blc++] = p[b];
+				}
+			}
+			continue;
+		}
+
+		arg_str = NULL;
+
+		if (strstr(p, "=")) {
+			/* arg starts after = for name or letter */
+			arg_str = strstr(p, "=") + 1;
+
+		} else if (strlen(p) > 2 && isalpha(p[1]) && isdigit(p[2])) {
+			/* arg with no space between letter and digits */
+			arg_str = p + 2;
+
+		} else {
+			/* space separates arg from name or letter */
+			if (i >= argc) {
+				fprintf(stderr, "option %s no arg", p);
+				exit(EXIT_FAILURE);
+			}
+			arg_str = argv[i++];
+		}
+
+		if (!arg_str || arg_str[0] == '-' || arg_str[0] == '\0') {
+			fprintf(stderr, "option %s requires arg", p);
+			exit(EXIT_FAILURE);
+		}
+
+		if (o->req_arg == req_arg_str) {
+			o->cli_str = strdup(arg_str);
+			o->use_str = o->cli_str;
+		} else if (o->req_arg == req_arg_int) {
+			o->cli_int = atoi(arg_str);
+			o->use_int = o->cli_int;
+		} else if (o->req_arg == req_arg_bool) {
+			o->cli_int = atoi(arg_str) ? 1 : 0;
+			o->use_int = o->cli_int;
+		}
+	}
+
+	/* process bundled letters saved above */
+
+	for (i = 0; i < blc; i++) {
+		ind = get_ind_letter(bundled_letters[i]);
+		if (ind < 0) {
+			fprintf(stderr, "unknown option char %c\n", bundled_letters[i]);
+			exit(EXIT_FAILURE);
+		}
+		o = &dlm_options[ind];
+		o->cli_set++;
+		o->cli_int = 1;
+		o->use_int = 1;
+	}
+
+	if (debug_options && opt(daemon_debug_ind)) {
+		for (i = 0; i < dlm_options_max; i++) {
+			o = &dlm_options[i];
+			printf("%-25s cli_set %d cli_int %d cli_str %s use_int %d use_str %s\n",
+			       o->name, o->cli_set, o->cli_int, o->cli_str, o->use_int, o->use_str);
+		}
 	}
 
 	if (getenv("DLM_CONTROLD_DEBUG")) {
-		optd_debug_logfile = 1;
-		cfgd_debug_logfile = 1;
+		dlm_options[daemon_debug_ind].use_int = 1;
 	}
 }
 
@@ -1308,39 +1545,19 @@ int main(int argc, char **argv)
 	struct sigaction act;
 	int fd, rv;
 
-	cfgk_debug                  = -1;
-	cfgk_timewarn               = -1;
-	cfgk_protocol               = PROTO_DETECT;
-	cfgd_debug_logfile          = DEFAULT_DEBUG_LOGFILE;
-	cfgd_enable_fscontrol       = DEFAULT_ENABLE_FSCONTROL;
+	set_opt_defaults();
 
-	cfgd_enable_plock           = DEFAULT_ENABLE_PLOCK;
-	cfgd_plock_debug            = DEFAULT_PLOCK_DEBUG;
-	cfgd_plock_rate_limit       = DEFAULT_PLOCK_RATE_LIMIT;
-	cfgd_plock_ownership        = DEFAULT_PLOCK_OWNERSHIP;
-	cfgd_drop_resources_time    = DEFAULT_DROP_RESOURCES_TIME;
-	cfgd_drop_resources_count   = DEFAULT_DROP_RESOURCES_COUNT;
-	cfgd_drop_resources_age     = DEFAULT_DROP_RESOURCES_AGE;
-
-	cfgd_post_join_delay        = DEFAULT_POST_JOIN_DELAY;
-	cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
-	cfgd_enable_startup_fencing = DEFAULT_ENABLE_STARTUP_FENCING;
-	cfgd_enable_quorum_fencing  = DEFAULT_ENABLE_QUORUM_FENCING;
-	cfgd_enable_quorum_lockspace= DEFAULT_ENABLE_QUORUM_LOCKSPACE;
-
-	strcpy(fence_all_agent, DEFAULT_FENCE_ALL_AGENT);
 	memset(&fence_all_device, 0, sizeof(struct fence_device));
 	strcpy(fence_all_device.name, "fence_all");
-	strcpy(fence_all_device.agent, fence_all_agent);
+	strcpy(fence_all_device.agent, dlm_options[fence_all_ind].default_str);
 
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);
-	
 	init_daemon();
 
-	read_arguments(argc, argv);
+	set_opt_cli(argc, argv);
 
-	if (!daemon_debug_opt) {
+	if (!opt(daemon_debug_ind)) {
 		if (daemon(0, 0) < 0) {
 			perror("daemon error");
 			exit(EXIT_FAILURE);

@@ -457,7 +457,11 @@ static struct node_daemon *add_node_daemon(int nodeid)
 
 	/* explicit command line arg has first priority */
 
-	if (optd_fence_all_agent) {
+	if (dlm_options[fence_all_ind].cli_set) {
+		memset(&fence_all_device, 0, sizeof(struct fence_device));
+		strcpy(fence_all_device.name, "fence_all");
+		strcpy(fence_all_device.agent, dlm_options[fence_all_ind].cli_str);
+
 		fc->dev[0] = &fence_all_device;
 		goto out;
 	}
@@ -746,7 +750,7 @@ static void daemon_fence_work(void)
 
 	/* poll_fencing++; */
 
-	if (cfgd_enable_quorum_fencing && !cluster_quorate) {
+	if (opt(enable_quorum_fencing_ind) && !cluster_quorate) {
 		/* wait for quorum before doing any fencing, but if there
 		   is none, send_fence_clear below can unblock new nodes */
 		log_debug("fence work wait for quorum");
@@ -766,12 +770,12 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		if (!cfgd_enable_startup_fencing)
+		if (!opt(enable_startup_fencing_ind))
 			continue;
 
-		if (monotime() - daemon_last_join_monotime < cfgd_post_join_delay) {
+		if (monotime() - daemon_last_join_monotime < opt(post_join_delay_ind)) {
 			log_debug("fence startup %d delay %d from %llu",
-				  node->nodeid, cfgd_post_join_delay,
+				  node->nodeid, opt(post_join_delay_ind),
 				  (unsigned long long)daemon_last_join_monotime);
 			poll_fencing++;
 			continue;
@@ -842,7 +846,7 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		if (!cfgd_enable_concurrent_fencing && daemon_fence_pid) {
+		if (!opt(enable_concurrent_fencing_ind) && daemon_fence_pid) {
 			/* run one agent at a time in case they need the same switch */
 			log_debug("fence request %d delay for other pid %d",
 				  node->nodeid, daemon_fence_pid);
@@ -851,9 +855,9 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		if (monotime() - cluster_last_join_monotime < cfgd_post_join_delay) {
+		if (monotime() - cluster_last_join_monotime < opt(post_join_delay_ind)) {
 			log_debug("fence request %d delay %d from %llu",
-				  node->nodeid, cfgd_post_join_delay,
+				  node->nodeid, opt(post_join_delay_ind),
 				  (unsigned long long)cluster_last_join_monotime);
 			node->delay_fencing = 1;
 			poll_fencing++;
@@ -1000,7 +1004,7 @@ static void daemon_fence_work(void)
 	 * clear fence_in_progress_unknown
 	 */
  out_fipu:
-	if (cfgd_enable_startup_fencing &&
+	if (opt(enable_startup_fencing_ind) &&
 	    fence_in_progress_unknown &&
 	    list_empty(&startup_nodes) &&
 	    !wait_clear_fipu &&
@@ -1063,7 +1067,7 @@ static void daemon_fence_work(void)
 		}
 	}
 
-	if (!cfgd_enable_startup_fencing && fence_in_progress_unknown) {
+	if (!opt(enable_startup_fencing_ind) && fence_in_progress_unknown) {
 		/*
 		 * case C in comment above
 		 * all nodes are starting and have fipu set.  All expect a
@@ -1872,7 +1876,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 		reason = 0;
 		low = 0;
 
-		if (!cfgd_enable_fencing)
+		if (!opt(enable_fencing_ind))
 			continue;
 
 		if (node->need_fencing) {
@@ -1959,7 +1963,7 @@ int setup_cpg_daemon(void)
 
 	memset(&our_protocol, 0, sizeof(our_protocol));
 
-	if (cfgd_enable_fscontrol)
+	if (opt(enable_fscontrol_ind))
 		our_protocol.daemon_max[0] = 2;
 	else
 		our_protocol.daemon_max[0] = 3;

@@ -80,22 +80,65 @@
 #define DEFAULT_LOGFILE_PRIORITY LOG_INFO
 #define DEFAULT_LOGFILE          LOG_FILE_PATH
 
-#define DEFAULT_DEBUG_LOGFILE 0
-#define DEFAULT_POST_JOIN_DELAY 30
-#define DEFAULT_ENABLE_FENCING 1
-#define DEFAULT_ENABLE_STARTUP_FENCING 1
-#define DEFAULT_ENABLE_CONCURRENT_FENCING 0
-#define DEFAULT_ENABLE_QUORUM_FENCING 1
-#define DEFAULT_ENABLE_QUORUM_LOCKSPACE 0
-#define DEFAULT_ENABLE_FSCONTROL 0
-#define DEFAULT_ENABLE_PLOCK 1
-#define DEFAULT_PLOCK_DEBUG 0
-#define DEFAULT_PLOCK_RATE_LIMIT 0
-#define DEFAULT_PLOCK_OWNERSHIP 0
-#define DEFAULT_DROP_RESOURCES_TIME 10000 /* 10 sec */
-#define DEFAULT_DROP_RESOURCES_COUNT 10
-#define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
-#define DEFAULT_FENCE_ALL_AGENT "dlm_stonith"
+enum {
+        no_arg = 0,
+        req_arg_bool = 1,
+        req_arg_int = 2,
+        req_arg_str = 3,
+};
+
+enum {
+        daemon_debug_ind = 0,
+        log_debug_ind,
+        timewarn_ind,
+        protocol_ind,
+        debug_logfile_ind,
+        enable_fscontrol_ind,
+        enable_plock_ind,
+        plock_debug_ind,
+        plock_rate_limit_ind,
+        plock_ownership_ind,
+        drop_resources_time_ind,
+        drop_resources_count_ind,
+        drop_resources_age_ind,
+        post_join_delay_ind,
+        enable_fencing_ind,
+        enable_concurrent_fencing_ind,
+        enable_startup_fencing_ind,
+        enable_quorum_fencing_ind,
+        enable_quorum_lockspace_ind,
+        fence_all_ind,
+        unfence_all_ind,
+        help_ind,
+        version_ind,
+        dlm_options_max,
+};
+
+struct dlm_option {
+	const char *name;
+	char letter;
+	int req_arg;
+	const char *desc;
+
+	int use_int;
+	char *use_str;
+
+	int default_int;
+	const char *default_str;
+
+	int cli_set;
+	int cli_int;
+	char *cli_str;
+
+	int file_set;
+	int file_int;
+	char *file_str;
+};
+
+EXTERN struct dlm_option dlm_options[dlm_options_max];
+#define opt(x) dlm_options[x].use_int
+#define opts(x) dlm_options[x].use_str
+
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -116,13 +159,10 @@
 
 #define MAXLINE		256
 
-/* cfgk_protocol */
-
 #define PROTO_TCP  0
 #define PROTO_SCTP 1
 #define PROTO_DETECT 2
 
-EXTERN int daemon_debug_opt;
 EXTERN int daemon_quit;
 EXTERN int cluster_down;
 EXTERN int poll_lockspaces;
@@ -145,46 +185,6 @@ EXTERN uint32_t control_minor;
 EXTERN uint32_t monitor_minor;
 EXTERN uint32_t plock_minor;
 EXTERN struct fence_device fence_all_device;
-
-EXTERN int optk_debug;
-EXTERN int optk_timewarn;
-EXTERN int optk_protocol;
-EXTERN int optd_debug_logfile;
-EXTERN int optd_post_join_delay;
-EXTERN int optd_enable_fencing;
-EXTERN int optd_enable_startup_fencing;
-EXTERN int optd_enable_concurrent_fencing;
-EXTERN int optd_enable_quorum_fencing;
-EXTERN int optd_enable_quorum_lockspace;
-EXTERN int optd_enable_fscontrol;
-EXTERN int optd_enable_plock;
-EXTERN int optd_plock_debug;
-EXTERN int optd_plock_rate_limit;
-EXTERN int optd_plock_ownership;
-EXTERN int optd_drop_resources_time;
-EXTERN int optd_drop_resources_count;
-EXTERN int optd_drop_resources_age;
-EXTERN int optd_fence_all_agent;
-
-EXTERN int cfgk_debug;
-EXTERN int cfgk_timewarn;
-EXTERN int cfgk_protocol;
-EXTERN int cfgd_debug_logfile;
-EXTERN int cfgd_post_join_delay;
-EXTERN int cfgd_enable_fencing;
-EXTERN int cfgd_enable_startup_fencing;
-EXTERN int cfgd_enable_concurrent_fencing;
-EXTERN int cfgd_enable_quorum_fencing;
-EXTERN int cfgd_enable_quorum_lockspace;
-EXTERN int cfgd_enable_fscontrol;
-EXTERN int cfgd_enable_plock;
-EXTERN int cfgd_plock_debug;
-EXTERN int cfgd_plock_rate_limit;
-EXTERN int cfgd_plock_ownership;
-EXTERN int cfgd_drop_resources_time;
-EXTERN int cfgd_drop_resources_count;
-EXTERN int cfgd_drop_resources_age;
-EXTERN char fence_all_agent[PATH_MAX];
 
 #define LOG_DUMP_SIZE DLMC_DUMP_SIZE
 
@@ -384,6 +384,7 @@ struct lockspace *find_ls(char *name);
 struct lockspace *find_ls_id(uint32_t id);
 const char *dlm_mode_str(int mode);
 void cluster_dead(int ci);
+struct dlm_option *get_dlm_option(char *name);
 
 /* member.c */
 int setup_cluster(void);

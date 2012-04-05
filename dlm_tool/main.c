@@ -40,6 +40,7 @@
 #define OP_LOG_PLOCK			10
 #define OP_FENCE_ACK			11
 #define OP_STATUS			12
+#define OP_DUMP_CONFIG			13
 
 static char *prog_name;
 static char *lsname;
@@ -183,7 +184,7 @@ static void print_usage(void)
 	printf("Usage:\n");
 	printf("\n");
 	printf("dlm_tool [options] [join | leave | lockdump | lockdebug |\n"
-	       "                    ls | dump | log_plock | plocks |\n"
+	       "                    ls | dump | dump_config | log_plock | plocks |\n"
 	       "                    fence_ack]\n");
 	printf("\n");
 	printf("Options:\n");
@@ -337,6 +338,12 @@ static void decode_arguments(int argc, char **argv)
 		} else if (!strncmp(argv[optind], "dump", 4) &&
 			   (strlen(argv[optind]) == 4)) {
 			operation = OP_DUMP;
+			opt_ind = optind + 1;
+			need_lsname = 0;
+			break;
+		} else if (!strncmp(argv[optind], "dump_config", 11) &&
+			   (strlen(argv[optind]) == 11)) {
+			operation = OP_DUMP_CONFIG;
 			opt_ind = optind + 1;
 			need_lsname = 0;
 			break;
@@ -1273,13 +1280,16 @@ static void do_plocks(char *name)
 	do_write(STDOUT_FILENO, buf, strlen(buf));
 }
 
-static void do_dump(void)
+static void do_dump(int op)
 {
 	char buf[DLMC_DUMP_SIZE];
 
 	memset(buf, 0, sizeof(buf));
 
-	dlmc_dump_debug(buf);
+	if (op == OP_DUMP)
+		dlmc_dump_debug(buf);
+	else if (op == OP_DUMP_CONFIG)
+		dlmc_dump_config(buf);
 
 	buf[DLMC_DUMP_SIZE-1] = '\0';
 
@@ -1334,7 +1344,11 @@ int main(int argc, char **argv)
 		break;
 
 	case OP_DUMP:
-		do_dump();
+		do_dump(operation);
+		break;
+
+	case OP_DUMP_CONFIG:
+		do_dump(operation);
 		break;
 
 	case OP_LOG_PLOCK:

@@ -24,7 +24,7 @@ void init_logging(void)
 	/* logfile_priority is the only one of these options that
 	   can be controlled from command line or environment variable */
 
-	if (cfgd_debug_logfile)
+	if (opt(debug_logfile_ind))
 		logfile_priority = LOG_DEBUG;
 
 	if (logfile[0]) {
@@ -167,10 +167,10 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 		fflush(logfile_fp);
 	}
 
-	if (!daemon_debug_opt)
+	if (!dlm_options[daemon_debug_ind].use_int)
 		return;
 
-	if (level || (plock && cfgd_plock_debug))
+	if (level || (plock && opt(plock_debug_ind)))
 		fprintf(stderr, "%s", log_str);
 }
 

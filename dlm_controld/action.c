@@ -50,9 +50,6 @@ static int detect_protocol(void)
 	return proto;
 }
 
-/* TODO: getting cluster_name will almost certainly change to either
-   a corosync lib api, or some cmap path other than cluster.name */
-
 static int detect_cluster_name(void)
 {
 	cmap_handle_t handle;
@@ -799,7 +796,8 @@ void clear_configfs(void)
 
 int setup_configfs_options(void)
 {
-	int rv;
+	char *proto_name;
+	int rv, proto_num;
 
 	clear_configfs();
 
@@ -808,24 +806,33 @@ int setup_configfs_options(void)
 		return rv;
 
 	/* the kernel has its own defaults for these values which we
-	   don't want to change unless these have been set; -1 means
-	   they have not been set on command line or config file */
+	   don't want to change unless these have been set explicitly
+	   on cli or config file */
 
-	if (cfgk_debug != -1)
-		set_configfs_cluster("log_debug", NULL, cfgk_debug);
-	if (cfgk_timewarn != -1)
-		set_configfs_cluster("timewarn_cs", NULL, cfgk_timewarn);
+	if (dlm_options[log_debug_ind].cli_set ||
+	    dlm_options[log_debug_ind].file_set)
+		set_configfs_cluster("log_debug", NULL, opt(log_debug_ind));
 
-	if (cfgk_protocol == PROTO_DETECT) {
-		rv = detect_protocol();
-		if (rv == PROTO_TCP || rv == PROTO_SCTP)
-			cfgk_protocol = rv;
-	}
+	if (dlm_options[timewarn_ind].cli_set ||
+	    dlm_options[timewarn_ind].file_set)
+		set_configfs_cluster("timewarn_cs", NULL, opt(timewarn_ind));
 
-	if (cfgk_protocol == PROTO_TCP || cfgk_protocol == PROTO_SCTP)
-		set_configfs_cluster("protocol", NULL, cfgk_protocol);
+	proto_name = opts(protocol_ind);
+	proto_num = -1;
 
-	if (cfgk_protocol == PROTO_SCTP)
+	if (!strcasecmp(proto_name, "detect") || !strcmp(proto_name, "2"))
+		proto_num = detect_protocol(); /* may be -1 */
+
+	else if (!strcasecmp(proto_name, "tcp") || !strcmp(proto_name, "0"))
+		proto_num = PROTO_TCP;
+
+	else if (!strcasecmp(proto_name, "sctp") || !strcmp(proto_name, "1"))
+		proto_num = PROTO_SCTP;
+
+	if (proto_num == PROTO_TCP || proto_num == PROTO_SCTP)
+		set_configfs_cluster("protocol", NULL, proto_num);
+
+	if (proto_num == PROTO_SCTP)
 		set_proc_rmem();
 
 	/* 
@@ -838,7 +845,7 @@ int setup_configfs_options(void)
 	 * go ahead without the monitor being open
 	 */
 
-	if (cfgd_enable_fscontrol) {
+	if (opt(enable_fscontrol_ind)) {
 		/* deprecated */
 		set_configfs_cluster("recover_callbacks", NULL, 0);
 	} else {

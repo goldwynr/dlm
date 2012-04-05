@@ -293,7 +293,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 	INIT_LIST_HEAD(&r->waiters);
 	INIT_LIST_HEAD(&r->pending);
 
-	if (cfgd_plock_ownership)
+	if (opt(plock_ownership_ind))
 		r->owner = -1;
 	else
 		r->owner = 0;
@@ -310,7 +310,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 static void put_resource(struct lockspace *ls, struct resource *r)
 {
 	/* with ownership, resources are only freed via drop messages */
-	if (cfgd_plock_ownership)
+	if (opt(plock_ownership_ind))
 		return;
 
 	if (list_empty(&r->locks) && list_empty(&r->waiters)) {
@@ -877,11 +877,11 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		return;
 	}
 
-	create = !cfgd_plock_ownership;
+	create = !opt(plock_ownership_ind);
 
 	rv = find_resource(ls, info.number, create, &r);
 
-	if (rv && cfgd_plock_ownership) {
+	if (rv && opt(plock_ownership_ind)) {
 		/* There must have been a race with a drop, so we need to
 		   ignore this plock op which will be resent.  If we're the one
 		   who sent the plock, we need to send_own() and put it on the
@@ -1420,7 +1420,7 @@ static int drop_resources(struct lockspace *ls)
 	struct timeval now;
 	int count = 0;
 
-	if (!cfgd_plock_ownership)
+	if (!opt(plock_ownership_ind))
 		return 0;
 
 	if (list_empty(&ls->plock_resources))
@@ -1429,7 +1429,7 @@ static int drop_resources(struct lockspace *ls)
 	gettimeofday(&now, NULL);
 
 	if (time_diff_ms(&ls->drop_resources_last, &now) <
-			 cfgd_drop_resources_time)
+			 opt(drop_resources_time_ind))
 		return 1;
 
 	ls->drop_resources_last = now;
@@ -1437,12 +1437,12 @@ static int drop_resources(struct lockspace *ls)
 	/* try to drop the oldest, unused resources */
 
 	list_for_each_entry_reverse(r, &ls->plock_resources, list) {
-		if (count >= cfgd_drop_resources_count)
+		if (count >= opt(drop_resources_count_ind))
 			break;
 		if (r->owner && r->owner != our_nodeid)
 			continue;
 		if (time_diff_ms(&r->last_access, &now) <
-		    cfgd_drop_resources_age)
+		    opt(drop_resources_age_ind))
 			continue;
 
 		if (list_empty(&r->locks) && list_empty(&r->waiters)) {
@@ -1478,18 +1478,18 @@ int limit_plocks(void)
 {
 	struct timeval now;
 
-	if (!cfgd_plock_rate_limit || !plock_read_count)
+	if (!opt(plock_rate_limit_ind) || !plock_read_count)
 		return 0;
 
 	gettimeofday(&now, NULL);
 
 	/* Every time a plock op is read from the kernel, we increment
-	   plock_read_count.  After every cfgd_plock_rate_limit (N) reads,
+	   plock_read_count.  After every plock_rate_limit (N) reads,
 	   we check the time it's taken to do those N; if the time is less than
 	   a second, then we delay reading any more until a second is up.
 	   This way we read a max of N ops from the kernel every second. */
 
-	if (!(plock_read_count % cfgd_plock_rate_limit)) {
+	if (!(plock_read_count % opt(plock_rate_limit_ind))) {
 		if (time_diff_ms(&plock_rate_last, &now) < 1000) {
 			plock_rate_delays++;
 			return 2;
@@ -1529,7 +1529,7 @@ void process_plocks(int ci)
 	/* kernel doesn't set the nodeid field */
 	info.nodeid = our_nodeid;
 
-	if (!cfgd_enable_plock) {
+	if (!opt(enable_plock_ind)) {
 		rv = -ENOSYS;
 		goto fail;
 	}
@@ -1586,7 +1586,7 @@ void process_plocks(int ci)
 		save_pending_plock(ls, r, &info);
 	}
 
-	if (cfgd_plock_ownership && !list_empty(&ls->plock_resources))
+	if (opt(plock_ownership_ind) && !list_empty(&ls->plock_resources))
 		poll_drop_plock = 1;
 	return;
 
@@ -1670,7 +1670,7 @@ static int pack_send_buf(struct lockspace *ls, struct resource *r, int owner,
 	}
 
 	/* plocks not replicated for owned resources */
-	if (cfgd_plock_ownership && (owner == our_nodeid))
+	if (opt(plock_ownership_ind) && (owner == our_nodeid))
 		goto done;
 
 	len = sizeof(struct dlm_header) + sizeof(struct resource_data);
@@ -1769,7 +1769,7 @@ void send_all_plocks_data(struct lockspace *ls, uint32_t seq, uint32_t *plocks_d
 	int owner, count, len, full;
 	uint32_t send_count = 0;
 
-	if (!cfgd_enable_plock || ls->disable_plock)
+	if (!opt(enable_plock_ind) || ls->disable_plock)
 		return;
 
 	log_dlock(ls, "send_all_plocks_data %d:%u", our_nodeid, seq);
@@ -1785,7 +1785,7 @@ void send_all_plocks_data(struct lockspace *ls, uint32_t seq, uint32_t *plocks_d
 	     (there should be no SYNCING plocks) */
 
 	list_for_each_entry(r, &ls->plock_resources, list) {
-		if (!cfgd_plock_ownership)
+		if (!opt(plock_ownership_ind))
 			owner = 0;
 		else if (r->owner == -1)
 			continue;
@@ -1861,7 +1861,7 @@ void receive_plocks_data(struct lockspace *ls, struct dlm_header *hd, int len)
 	int owner;
 	int i;
 
-	if (!cfgd_enable_plock || ls->disable_plock)
+	if (!opt(enable_plock_ind) || ls->disable_plock)
 		return;
 
 	if (!ls->need_plocks)
@@ -1907,7 +1907,7 @@ void receive_plocks_data(struct lockspace *ls, struct dlm_header *hd, int len)
 	INIT_LIST_HEAD(&r->waiters);
 	INIT_LIST_HEAD(&r->pending);
 
-	if (!cfgd_plock_ownership) {
+	if (!opt(plock_ownership_ind)) {
 		if (owner) {
 			log_elock(ls, "recv_plocks_data %d:%u n %llu bad owner %d",
 				  hd->nodeid, hd->msgdata, (unsigned long long)num,
@@ -1991,7 +1991,7 @@ void clear_plocks_data(struct lockspace *ls)
 	struct resource *r, *r2;
 	uint32_t count = 0;
 
-	if (!cfgd_enable_plock || ls->disable_plock)
+	if (!opt(enable_plock_ind) || ls->disable_plock)
 		return;
 
 	list_for_each_entry_safe(r, r2, &ls->plock_resources, list) {
@@ -2019,7 +2019,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 	struct resource *r, *r2;
 	int purged = 0;
 
-	if (!cfgd_enable_plock || ls->disable_plock)
+	if (!opt(enable_plock_ind) || ls->disable_plock)
 		return;
 
 	list_for_each_entry_safe(r, r2, &ls->plock_resources, list) {
@@ -2053,7 +2053,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 		if (!list_empty(&r->waiters))
 			do_waiters(ls, r);
 
-		if (!cfgd_plock_ownership &&
+		if (!opt(plock_ownership_ind) &&
 		    list_empty(&r->locks) && list_empty(&r->waiters)) {
 			rb_del_plock_resource(ls, r);
 			list_del(&r->list);

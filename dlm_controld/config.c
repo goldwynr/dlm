@@ -8,14 +8,18 @@
 
 #include "dlm_daemon.h"
 
-/* TODO:
- <dlm>
- <lockspace name="foo" nodir="1">
-   <master nodeid="1" weight="2"/>
-   <master nodeid="2" weight="3"/>
- </lockspace>
- </dlm>
-*/
+/*
+ * TODO: lockspace master/nodir/weight
+ *
+ * lockspace foo nodir=1
+ * master foo nodeid=1 weight=1
+ * master foo nodeid=2 weight=1
+ * master foo nodeid=3 weight=1
+ *
+ * lockspace bar nodir=1
+ * master bar nodeid=4 weight=2
+ * master bar nodeid=5 weight=1
+ */
 
 int get_weight(int nodeid, char *lockspace)
 {
@@ -23,20 +27,7 @@ int get_weight(int nodeid, char *lockspace)
 	return 1;
 }
 
-static void proto_val(char *str, int *val)
-{
-	if (!strncasecmp(str, "tcp", 3))
-		*val = PROTO_TCP;
-	else if (!strncasecmp(str, "sctp", 4))
-		*val = PROTO_SCTP;
-	else if (!strncasecmp(str, "detect", 6))
-		*val = PROTO_DETECT;
-	else {
-		log_error("invalid protocol value %s", str);
-	}
-}
-
-static void set_val(char *line, int *val_out)
+static void get_val_int(char *line, int *val_out)
 {
 	char key[PATH_MAX];
 	char val[PATH_MAX];
@@ -47,11 +38,9 @@ static void set_val(char *line, int *val_out)
 		return;
 
 	*val_out = atoi(val);
-
-	log_debug("config %s=%d", key, *val_out);
 }
 
-static void get_val(char *line, char *val_out)
+static void get_val_str(char *line, char *val_out)
 {
 	char key[PATH_MAX];
 	char val[PATH_MAX];
@@ -66,9 +55,11 @@ static void get_val(char *line, char *val_out)
 
 void setup_config(int update)
 {
+	struct dlm_option *o;
 	FILE *file;
 	char line[PATH_MAX];
 	char str[PATH_MAX];
+	int i, val;
 
 	if (!path_exists(CONF_FILE_PATH))
 		return;
@@ -83,59 +74,71 @@ void setup_config(int update)
 		if (line[0] == '\n')
 			continue;
 
-		if (!optk_debug && !strncmp(line, "log_debug", strlen("log_debug")))
-			set_val(line, &cfgk_debug);
+		memset(str, 0, sizeof(str));
 
-		else if (!optk_timewarn && !strncmp(line, "timewarn", strlen("timewarn")) && !update)
-			set_val(line, &cfgk_timewarn);
+		for (i = 0; i < PATH_MAX; i++) {
+			if (line[i] == ' ')
+				break;
+			if (line[i] == '=')
+				break;
+			if (line[i] == '\0')
+				break;
+			if (line[i] == '\n')
+				break;
+			if (line[i] == '\t')
+				break;
+			str[i] = line[i];
+		}
 
-		else if (!optd_post_join_delay && !strncmp(line, "post_join_delay", strlen("post_join_delay")))
-			set_val(line, &cfgd_post_join_delay);
+		o = get_dlm_option(str);
+		if (!o)
+			continue;
 
-		else if (!optd_enable_fencing && !strncmp(line, "enable_fencing", strlen("enable_fencing")) && !update)
-			set_val(line, &cfgd_enable_fencing);
+		o->file_set++;
 
-		else if (!optd_enable_startup_fencing && !strncmp(line, "enable_startup_fencing", strlen("enable_startup_fencing")) && !update)
-			set_val(line, &cfgd_enable_startup_fencing);
+		if (!o->req_arg) {
+			/* ignore any = x */
 
-		else if (!optd_enable_concurrent_fencing && !strncmp(line, "enable_concurrent_fencing", strlen("enable_concurrent_fencing")) && !update)
-			set_val(line, &cfgd_enable_concurrent_fencing);
+			o->file_int = 1;
 
-		else if (!optd_enable_quorum_fencing && !strncmp(line, "enable_quorum_fencing", strlen("enable_quorum_fencing")) && !update)
-			set_val(line, &cfgd_enable_quorum_fencing);
+			if (!o->cli_set)
+				o->use_int = o->file_int;
 
-		else if (!optd_enable_quorum_lockspace && !strncmp(line, "enable_quorum_lockspace", strlen("enable_quorum_lockspace")) && !update)
-			set_val(line, &cfgd_enable_quorum_lockspace);
+			log_debug("config file %s = %d cli_set %d use %d",
+				  o->name, o->file_int, o->cli_set, o->use_int);
 
-		else if (!optd_enable_fscontrol && !strncmp(line, "enable_fscontrol", strlen("enable_fscontrol")) && !update)
-			set_val(line, &cfgd_enable_fscontrol);
+		} else if (o->req_arg == req_arg_int) {
+			get_val_int(line, &val);
 
-		else if (!optd_enable_plock && !strncmp(line, "enable_plock", strlen("enable_plock")) && !update)
-			set_val(line, &cfgd_enable_plock);
+			o->file_int = val;
 
-		else if (!optd_plock_ownership && !strncmp(line, "plock_ownership", strlen("plock_ownership")) && !update)
-			set_val(line, &cfgd_plock_ownership);
+			if (!o->cli_set)
+				o->use_int = o->file_int;
 
-		else if (!optd_plock_debug && !strncmp(line, "plock_debug", strlen("plock_debug")))
-			set_val(line, &cfgd_plock_debug);
+			log_debug("config file %s = %d cli_set %d use %d",
+				  o->name, o->file_int, o->cli_set, o->use_int);
 
-		else if (!optd_plock_rate_limit && !strncmp(line, "plock_rate_limit", strlen("plock_rate_limit")))
-			set_val(line, &cfgd_plock_rate_limit);
+		} else if (o->req_arg == req_arg_bool) {
+			get_val_int(line, &val);
 
-		else if (!optd_drop_resources_time && !strncmp(line, "drop_resources_time", strlen("drop_resources_time")))
-			set_val(line, &cfgd_drop_resources_time);
+			o->file_int = val ? 1 : 0;
 
-		else if (!optd_drop_resources_count && !strncmp(line, "drop_resources_count", strlen("drop_resources_count")))
-			set_val(line, &cfgd_drop_resources_count);
+			if (!o->cli_set)
+				o->use_int = o->file_int;
 
-		else if (!optd_drop_resources_age && !strncmp(line, "drop_resources_age", strlen("drop_resources_age")))
-			set_val(line, &cfgd_drop_resources_age);
-
-		else if (!optk_protocol && !strncmp(line, "protocol", strlen("protocol")) && !update) {
+			log_debug("config file %s = %d cli_set %d use %d",
+				  o->name, o->file_int, o->cli_set, o->use_int);
+		} else if (o->req_arg == req_arg_str) {
 			memset(str, 0, sizeof(str));
-			get_val(line, str);
-			proto_val(str, &cfgk_protocol);
-			log_debug("config protocol = %d", cfgk_protocol);
+			get_val_str(line, str);
+
+			o->file_str = strdup(str);
+
+			if (!o->cli_set)
+				o->use_str = o->file_str;
+
+			log_debug("config file %s = %s cli_set %d use %s",
+				  o->name, o->file_str, o->cli_set, o->use_str);
 		}
 	}
 

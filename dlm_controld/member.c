@@ -356,7 +356,7 @@ int setup_node_config(void)
 
 		log_debug("node_config %d", nodeid);
 
-		if (cfgd_enable_fencing && cfgd_enable_startup_fencing)
+		if (opt(enable_fencing_ind) && opt(enable_startup_fencing_ind))
 			add_startup_node(nodeid);
 	}
 

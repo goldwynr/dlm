@@ -315,7 +315,7 @@ static void node_history_lockspace_fail(struct lockspace *ls, int nodeid,
 		return;
 	}
 
-	if (cfgd_enable_fencing && node->start_time) {
+	if (opt(enable_fencing_ind) && node->start_time) {
 		node->need_fencing = 1;
 		node->fence_queries = 0;
 	}
@@ -396,7 +396,7 @@ static int check_fencing_done(struct lockspace *ls)
 	int wait_count = 0;
 	int rv, in_progress;
 
-	if (!cfgd_enable_fencing) {
+	if (!opt(enable_fencing_ind)) {
 		log_group(ls, "check_fencing disabled");
 		return 1;
 	}
@@ -592,7 +592,7 @@ static int wait_conditions_done(struct lockspace *ls)
 		return 0;
 	}
 
-	if ((cfgd_enable_quorum_lockspace > 1) && !cluster_quorate) {
+	if (opt(enable_quorum_lockspace_ind) && !cluster_quorate) {
 		log_group(ls, "wait for quorum");
 		ls->wait_debug = DLMC_LS_WAIT_QUORUM;
 		return 0;
@@ -1097,7 +1097,7 @@ static void prepare_plocks(struct lockspace *ls)
 	struct member *memb;
 	uint32_t plocks_data;
 
-	if (!cfgd_enable_plock || ls->disable_plock)
+	if (!opt(enable_plock_ind) || ls->disable_plock)
 		return;
 
 	log_dlock(ls, "prepare_plocks");
@@ -1393,6 +1393,9 @@ static void deliver_cb(cpg_handle_t handle,
 	int ignore_plock;
 	int rv;
 
+	int enable_plock = opt(enable_plock_ind);
+	int plock_ownership = opt(plock_ownership_ind);
+
 	ls = find_ls_handle(handle);
 	if (!ls) {
 		log_error("deliver_cb no ls for cpg %s", group_name->value);
@@ -1425,11 +1428,11 @@ static void deliver_cb(cpg_handle_t handle,
 			ignore_plock = 1;
 			break;
 		}
-		if (cfgd_enable_plock)
+		if (enable_plock)
 			receive_plock(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d",
-				  hd->type, nodeid, cfgd_enable_plock);
+				  hd->type, nodeid, enable_plock);
 		break;
 
 	case DLM_MSG_PLOCK_OWN:
@@ -1439,12 +1442,11 @@ static void deliver_cb(cpg_handle_t handle,
 			ignore_plock = 1;
 			break;
 		}
-		if (cfgd_enable_plock && cfgd_plock_ownership)
+		if (enable_plock && plock_ownership)
 			receive_own(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
-				  hd->type, nodeid, cfgd_enable_plock,
-				  cfgd_plock_ownership);
+				  hd->type, nodeid, enable_plock, plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCK_DROP:
@@ -1454,12 +1456,11 @@ static void deliver_cb(cpg_handle_t handle,
 			ignore_plock = 1;
 			break;
 		}
-		if (cfgd_enable_plock && cfgd_plock_ownership)
+		if (enable_plock && plock_ownership)
 			receive_drop(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
-				  hd->type, nodeid, cfgd_enable_plock,
-				  cfgd_plock_ownership);
+				  hd->type, nodeid, enable_plock, plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCK_SYNC_LOCK:
@@ -1470,65 +1471,64 @@ static void deliver_cb(cpg_handle_t handle,
 			ignore_plock = 1;
 			break;
 		}
-		if (cfgd_enable_plock && cfgd_plock_ownership)
+		if (enable_plock && plock_ownership)
 			receive_sync(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
-				  hd->type, nodeid, cfgd_enable_plock,
-				  cfgd_plock_ownership);
+				  hd->type, nodeid, enable_plock, plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCKS_DATA:
 		if (ls->disable_plock)
 			break;
-		if (cfgd_enable_plock)
+		if (enable_plock)
 			receive_plocks_data(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d",
-				  hd->type, nodeid, cfgd_enable_plock);
+				  hd->type, nodeid, enable_plock);
 		break;
 
 	case DLM_MSG_PLOCKS_DONE:
 		if (ls->disable_plock)
 			break;
-		if (cfgd_enable_plock)
+		if (enable_plock)
 			receive_plocks_done(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d",
-				  hd->type, nodeid, cfgd_enable_plock);
+				  hd->type, nodeid, enable_plock);
 		break;
 
 #if 0
 	case DLM_MSG_DEADLK_CYCLE_START:
-		if (cfgd_enable_deadlk)
+		if (opt(enable_deadlk))
 			receive_cycle_start(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_deadlk %d",
-				  hd->type, nodeid, cfgd_enable_deadlk);
+				  hd->type, nodeid, opt(enable_deadlk));
 		break;
 
 	case DLM_MSG_DEADLK_CYCLE_END:
-		if (cfgd_enable_deadlk)
+		if (opt(enable_deadlk))
 			receive_cycle_end(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_deadlk %d",
-				  hd->type, nodeid, cfgd_enable_deadlk);
+				  hd->type, nodeid, opt(enable_deadlk));
 		break;
 
 	case DLM_MSG_DEADLK_CHECKPOINT_READY:
-		if (cfgd_enable_deadlk)
+		if (opt(enable_deadlk))
 			receive_checkpoint_ready(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_deadlk %d",
-				  hd->type, nodeid, cfgd_enable_deadlk);
+				  hd->type, nodeid, opt(enable_deadlk));
 		break;
 
 	case DLM_MSG_DEADLK_CANCEL_LOCK:
-		if (cfgd_enable_deadlk)
+		if (opt(enable_deadlk))
 			receive_cancel_lock(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_deadlk %d",
-				  hd->type, nodeid, cfgd_enable_deadlk);
+				  hd->type, nodeid, opt(enable_deadlk));
 		break;
 #endif
 

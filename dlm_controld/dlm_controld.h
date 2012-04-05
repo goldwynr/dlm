@@ -31,6 +31,7 @@
 #define DLMC_CMD_DUMP_LOG_PLOCK		11
 #define DLMC_CMD_FENCE_ACK		12
 #define DLMC_CMD_DUMP_STATUS		13
+#define DLMC_CMD_DUMP_CONFIG		14
 
 struct dlmc_header {
 	unsigned int magic;
