@@ -458,10 +458,6 @@ static struct node_daemon *add_node_daemon(int nodeid)
 	/* explicit command line arg has first priority */
 
 	if (dlm_options[fence_all_ind].cli_set) {
-		memset(&fence_all_device, 0, sizeof(struct fence_device));
-		strcpy(fence_all_device.name, "fence_all");
-		strcpy(fence_all_device.agent, dlm_options[fence_all_ind].cli_str);
-
 		fc->dev[0] = &fence_all_device;
 		goto out;
 	}

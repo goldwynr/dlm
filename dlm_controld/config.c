@@ -53,7 +53,7 @@ static void get_val_str(char *line, char *val_out)
 	strcpy(val_out, val);
 }
 
-void setup_config(int update)
+void set_opt_file(int update)
 {
 	struct dlm_option *o;
 	FILE *file;

@@ -925,8 +925,6 @@ static void loop(void)
 	void (*workfn) (int ci);
 	void (*deadfn) (int ci);
 
-	setup_config(0);
-
 	rv = setup_queries();
 	if (rv < 0)
 		goto out;
@@ -1215,6 +1213,8 @@ static void print_usage(void)
 			printf(" [%d]\n", o->default_int);
 		else if (o->req_arg == req_arg_bool)
 			printf(" [%d]\n", o->default_int);
+		else if (o->req_arg == no_arg && !o->default_int)
+			printf(" [0]\n");
 		else
 			printf("\n");
 
@@ -1338,9 +1338,9 @@ static void set_opt_defaults(void)
 			"fence all nodes with this agent");
 
 	set_opt_default(unfence_all_ind,
-			"unfence_all", '\0', req_arg_str,
-			-1, NULL,
-			"unfence all nodes with this agent");
+			"unfence_all", '\0', no_arg,
+			0, NULL,
+			"enable unfencing self with fence_all agent");
 
 	set_opt_default(help_ind,
 			"help", 'h', no_arg,
@@ -1546,17 +1546,24 @@ int main(int argc, char **argv)
 	struct sigaction act;
 	int fd, rv;
 
-	set_opt_defaults();
+	/*
+	 * config priority: cli, config file, default
+	 * - explicit cli setting will override default,
+	 * - explicit file setting will override default
+	 * - explicit file setting will not override explicit cli setting
+	 */
 
-	memset(&fence_all_device, 0, sizeof(struct fence_device));
+	set_opt_defaults();
+	set_opt_cli(argc, argv);
+	set_opt_file(0);
+
 	strcpy(fence_all_device.name, "fence_all");
-	strcpy(fence_all_device.agent, dlm_options[fence_all_ind].default_str);
+	strcpy(fence_all_device.agent, opts(fence_all_ind));
+	fence_all_device.unfence = opt(unfence_all_ind);
 
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);
 	init_daemon();
-
-	set_opt_cli(argc, argv);
 
 	if (!opt(daemon_debug_ind)) {
 		if (daemon(0, 0) < 0) {

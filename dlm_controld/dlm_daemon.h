@@ -307,7 +307,7 @@ int setup_misc_devices(void);
 int path_exists(const char *path);
 
 /* config.c */
-void setup_config(int update);
+void set_opt_file(int update);
 int get_weight(int nodeid, char *lockspace);
 
 /* cpg.c */
