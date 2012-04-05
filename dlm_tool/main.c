@@ -183,23 +183,23 @@ static void print_usage(void)
 {
 	printf("Usage:\n");
 	printf("\n");
-	printf("dlm_tool [options] [join | leave | lockdump | lockdebug |\n"
-	       "                    ls | dump | dump_config | log_plock | plocks |\n"
-	       "                    fence_ack]\n");
+	printf("dlm_tool [command] [options] [name]\n");
+	printf("\n");
+	printf("Commands:\n");
+	printf("ls, status, dump, dump_config, fence_ack\n");
+	printf("log_plock, plocks\n");
+	printf("join, leave, lockdebug\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -n               Show all node information in ls\n");
-	printf("  -d <n>           Resource directory off/on (0/1) in join, default 0\n");
-	printf("  -e <n>           Exclusive create off/on (0/1) in join, default 0\n");
-	printf("  -f <n>           FS memory allocation off/on (0/1) in join, default 0\n");
+	printf("  -d 0|1           Resource directory off/on in join, default 0\n");
+	printf("  -e 0|1           Exclusive create off/on in join, default 0\n");
+	printf("  -f 0|1           FS (filesystem) flag off/on in join, default 0\n");
 	printf("  -m <mode>        Permission mode for lockspace device (octal), default 0600\n");
-	printf("  -M               Print MSTCPY locks in lockdump\n"
-	       "                   (remote locks that are locally mastered)\n");
-	printf("  -s               Summary following lockdebug output\n");
-	printf("                   (experimental, format not fixed)\n");
+	printf("  -s               Summary following lockdebug output (experimental)\n");
 	printf("  -v               Verbose lockdebug output\n");
 	printf("  -w               Wide lockdebug output\n");
-	printf("  -h               Print this help, then exit\n");
+	printf("  -h               Print help, then exit\n");
 	printf("  -V               Print program version information, then exit\n");
 	printf("\n");
 }

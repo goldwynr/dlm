@@ -1,4 +1,4 @@
-.TH DLM_TOOL 8 2009-01-20 cluster cluster
+.TH DLM_TOOL 8 2012-04-05 dlm dlm
 
 .SH NAME
 dlm_tool \- a utility for the dlm and dlm_controld daemon
@@ -10,89 +10,88 @@ dlm_tool \- a utility for the dlm and dlm_controld daemon
 .I name
 ]
 
-.SH DESCRIPTION
-.TP
+.SH COMMANDS 
+
 .B ls
-Display internal dlm_controld state about lockspaces.
+.br
+	Display dlm_controld internal lockspace state.
 
-.TP
+.B status
+.br
+	Dump dlm_controld daemon state.
+
 .B dump
-Dump dlm_controld debug buffer.
+.br
+	Dump dlm_controld debug buffer.
 
-.TP
+.B dump_config
+.br
+	Dump dlm_controld config settings.
+
+.BI fence_ack " nodeid"
+.br
+	Quit trying to fence a node.
+
 .B log_plock
-Dump dlm_controld plock debug buffer.
+.br
+	Dump dlm_controld plock debug buffer.
 
-.TP
 .BI plocks " name"
-Dump posix locks from dlm_controld for the lockspace.
+.br
+	Dump posix locks from dlm_controld for the lockspace.
 
-.TP
-.BI lockdump " name"
-Minimal display of locks from the lockspace.
-
-.TP
-.BI lockdebug " name"
-Extended display of locks from the lockspace.
-
-.TP
 .BI join " name"
-Join a lockspace.
+.br
+	Join a lockspace.
 
-.TP
 .BI leave " name"
-Leave a lockspace.
+.br
+	Leave a lockspace.
 
-.TP
-.BI deadlock_check " name"
-Start a deadlock detection cycle for the lockspace.
+.BI lockdebug " name"
+.br
+	Complete display of locks from the lockspace.
+
+.BI lockdump " name"
+.br
+	Minimal display of locks from the lockspace (deprecated).
 
 .SH OPTIONS
-.TP
+
 .B \-n
 Show all node information in ls.
 
-.TP
-.BI \-d " num"
-Resource directory enabled (1) or disabled (0) during join. Default 0.
+.B \-d
+0|1 Resource directory off/on in join, default 0
 
-.TP
-.BI \-e " num"
-Exclusive create off/on (0/1) in join. Default 0.
+.B \-e
+0|1 Exclusive create off/on in join, default 0
 
-.TP
-.BI \-f " num"
-FS memory allocation off/on (0/1) in join. Default 0.
+.B \-f
+0|1 FS (filesystem) flag off/on in join, default 0
 
-.TP
 .BI \-m " mode"
-The permission mode (in octal) of the lockspace device created by join.
-Default 0600.
+Permission mode for lockspace device (octal), default 0600
 
-.TP
-.B \-M
-Dump MSTCPY locks in addition to locks held by local processes.
-
-.TP
 .B \-s
-Summary following lockdebug output (experimental, format may change).
+Summary following lockdebug output (experiemental)
 
-.TP
 .B \-v
-Verbose lockdebug output.
+Verbose lockdebug output
 
-.TP
 .B \-w
-Wide lockdebug output.
+Wide lockdebug output
 
-.TP
+.B \-M
+Include MSTCPY locks in lockdump output
+
 .B \-h
-Print a help message describing available options, then exit.
+Print help, then exit
 
-.TP
 .B \-V
-Print program version information, then exit.
+Print program version information, then exit
 
 .SH SEE ALSO
-.BR dlm_controld (8)
+.BR dlm_controld (8),
+.BR dlm.conf (5)
 
