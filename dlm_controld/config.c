@@ -10,15 +10,6 @@
 
 /*
  * TODO: lockspace master/nodir/weight
- *
- * lockspace foo nodir=1
- * master foo nodeid=1 weight=1
- * master foo nodeid=2 weight=1
- * master foo nodeid=3 weight=1
- *
- * lockspace bar nodir=1
- * master bar nodeid=4 weight=2
- * master bar nodeid=5 weight=1
  */
 
 int get_weight(int nodeid, char *lockspace)

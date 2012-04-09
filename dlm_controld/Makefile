@@ -7,8 +7,6 @@ HDRDIR=$(PREFIX)/include
 MANDIR=$(PREFIX)/share/man
 
 BIN_TARGET = dlm_controld
-MAN_TARGET = dlm_controld.8
-HDR_TARGET = libdlmcontrol.h
 
 LIB_NAME = libdlmcontrol
 LIB_MAJOR = 3
@@ -83,10 +81,12 @@ install: all
 	$(INSTALL) -d $(DESTDIR)/$(LIBDIR)
 	$(INSTALL) -d $(DESTDIR)/$(HDRDIR)
 	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man8
-	$(INSTALL) -c -m 755 $(BIN_TARGET) $(DESTDIR)/$(BINDIR)
-	$(INSTALL) -c -m 755 $(LIB_TARGET) $(DESTDIR)/$(LIBDIR)
+	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man5
+	$(INSTALL) -m 755 $(BIN_TARGET) $(DESTDIR)/$(BINDIR)
+	$(INSTALL) -m 755 $(LIB_TARGET) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LIB_SO) $(DESTDIR)/$(LIBDIR)
 	cp -a $(LIB_SMAJOR) $(DESTDIR)/$(LIBDIR)
-	$(INSTALL) -c -m 644 $(HDR_TARGET) $(DESTDIR)/$(HDRDIR)
-	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man8/
+	$(INSTALL) -m 644 libdlmcontrol.h $(DESTDIR)/$(HDRDIR)
+	$(INSTALL) -m 644 dlm_controld.8 $(DESTDIR)/$(MANDIR)/man8/
+	$(INSTALL) -m 644 dlm.conf.5 $(DESTDIR)/$(MANDIR)/man5/
 

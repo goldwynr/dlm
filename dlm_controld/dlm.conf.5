@@ -1,0 +1,393 @@
+.TH DLM.CONF 5 2012-04-09 dlm dlm
+
+.SH NAME
+dlm.conf \- dlm_controld configuration file
+
+.SH DESCRIPTION
+The configuration options in dlm.conf mirror the dlm_controld
+command line options.  The config file additionally allows
+advanced fencing and lockspace configuration that are not
+supported on the command line.
+
+.SH Command line equivalents
+
+If an option is specified on the command line and in the config file, the
+command line setting overrides the config file setting.
+See
+.BR dlm_controld (8)
+for descriptions and dlm_controld -h for defaults.
+
+Format:
+
+key=val
+
+Example:
+
+log_debug=1
+.br
+post_join_delay=10
+.br
+protocol=tcp
+
+Options:
+
+daemon_debug
+.br
+log_debug
+.br
+protocol
+.br
+debug_logfile
+.br
+enable_plock
+.br
+plock_debug
+.br
+plock_rate_limit
+.br
+plock_ownership
+.br
+drop_resources_time
+.br
+drop_resources_count
+.br
+drop_resources_age
+.br
+post_join_delay
+.br
+enable_fencing
+.br
+enable_concurrent_fencing
+.br
+enable_startup_fencing
+.br
+enable_quorum_fencing
+.br
+enable_quorum_lockspace
+.br
+fence_all
+.br
+unfence_all
+.br
+
+.SH Fencing
+
+A fence device definition begins with a
+.B device
+line, followed by a number of
+.B connect
+lines, one for each node connected to the device.
+
+A blank line separates device definitions.
+
+Devices are used in the order they are listed.
+
+The
+.B device
+key word is followed by a unique
+.IR dev_name ,
+the
+.I agent
+program to be used, and
+.IR args ,
+which are agent arguments specific to the device.
+
+The
+.B connect
+key word is followed by the
+.I dev_name
+of the device section, the node ID of the connected node in the format
+.BI node= nodeid
+and
+.IR args ,
+which are agent arguments specific to the node for the given device.
+
+The format of
+.I args
+is key=val on both device and connect lines, each pair separated by a space,
+e.g. key1=val1 key2=val2 key3=val3.
+
+Format:
+
+.B device
+.I " dev_name"
+.I agent
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+
+Example:
+
+device  foo fence_foo ipaddr=1.1.1.1 login=x password=y
+.br
+connect foo node=1 port=1
+.br
+connect foo node=2 port=2
+.br
+connect foo node=3 port=3
+
+device  bar fence_bar ipaddr=2.2.2.2 login=x password=y
+.br
+connect bar node=1 port=1
+.br
+connect bar node=2 port=2
+.br
+connect bar node=3 port=3
+
+.SS Parallel devices
+
+Some devices, like dual power or dual path, must all be turned off in
+parallel for fencing to succeed.  To define multiple devices as being
+parallel to each other, use the same base dev_name with different
+suffixes and a colon separator between base name and suffix.
+
+Format:
+
+.B device
+.IR " dev_name" :1
+.IR agent
+[args]
+.br
+.B connect
+.IR dev_name :1
+.BI node= nodeid
+[args]
+.br
+.B connect
+.IR dev_name :1
+.BI node= nodeid
+[args]
+.br
+.B connect
+.IR dev_name :1
+.BI node= nodeid
+[args]
+
+.B device
+.IR " dev_name" :2
+.I agent
+[args]
+.br
+.B connect
+.IR dev_name :2
+.BI node= nodeid
+[args]
+.br
+.B connect
+.IR dev_name :2
+.BI node= nodeid
+[args]
+.br
+.B connect
+.IR dev_name :2
+.BI node= nodeid
+[args]
+
+Example:
+
+device  foo:1 fence_foo ipaddr=1.1.1.1 login=x password=y
+.br
+connect foo:1 node=1 port=1
+.br
+connect foo:2 node=2 port=2
+.br
+connect foo:3 node=3 port=3
+
+device  foo:2 fence_foo ipaddr=5.5.5.5 login=x password=y
+.br
+connect foo:2 node=1 port=1
+.br
+connect foo:2 node=2 port=2
+.br
+connect foo:2 node=3 port=3
+
+.SS Unfencing
+
+A node may sometimes need to "unfence" itself when starting.  The
+unfencing command reverses the effect of a previous fencing operation
+against it.  An example would be fencing that disables a port on a SAN
+switch.  A node could use unfencing to re-enable its switch port when
+starting up after rebooting.  (Care must be taken to ensure it's safe for
+a node to unfence itself.  A node often needs to be cleanly rebooted
+before unfencing itself.)
+
+To specify that a node should unfence itself for a given
+.BR device, 
+the
+.B unfence
+line is added after the
+.B connect
+lines.
+
+Format:
+
+.B device
+.I " dev_name"
+.I agent
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+.B connect
+.I dev_name
+.BI node= nodeid
+[args]
+.br
+.BI "unfence " dev_name
+
+Example:
+
+device  foo fence_foo ipaddr=1.1.1.1 login=x password=y
+.br
+connect foo node=1 port=1
+.br
+connect foo node=2 port=2
+.br
+connect foo node=3 port=3
+.br
+unfence foo
+
+.SS Simple devices
+
+In some cases, a single fence device is used for all nodes, and it
+requires no node-specific args.  This would typically be a "bridge" fence
+device in which an agent is passing a fence request to another subsystem
+to handle.  (Note that a "node=nodeid" arg is always automatically
+included in agent args, so a node-specific nodeid is always present to
+minimally identify the victim.)
+
+In such a case, a simplified, single-line fence configuration is possible,
+with format:
+
+.B fence_all
+.I agent
+[args]
+
+Example:
+
+fence_all dlm_stonith
+
+A fence_all configuration is not compatible with a fence device
+configuration (above).
+
+Unfencing can optionally be applied with:
+
+.B fence_all
+.I agent
+[args]
+.br
+.B unfence_all
+
+.SH Lockspace configuration
+
+A lockspace definition begins with a
+.B lockspace
+line, followed by a number of
+.B master
+lines.  A blank line separates lockspace definitions.
+
+Format:
+
+.B lockspace
+.I ls_name
+[ls_args]
+.br
+.B master
+.I "   ls_name"
+.BI node= nodeid
+[node_args]
+.br
+.B master
+.I "   ls_name"
+.BI node= nodeid
+[node_args]
+.br
+.B master
+.I "   ls_name"
+.BI node= nodeid
+[node_args]
+.br
+
+.SS Disabling resource directory
+
+Lockspaces usually use a resource directory to keep track of which node is
+the master of each resource.  The dlm can operate without the resource
+directory, though, by statically assigning the master of a resource using
+a hash of the resource name.  To enable, set the per-lockspace
+.B nodir
+option to 1.
+
+Example:
+
+lockspace foo nodir=1
+
+.SS Lock-server configuration
+
+The nodir setting can be combined with node weights to create a
+configuration where select node(s) are the master of all resources/locks.
+These master nodes can be viewed as "lock servers" for the other nodes.
+
+Example of nodeid 1 as master of all resources:
+
+lockspace foo nodir=1
+.br
+master node=1
+
+Example of nodeid's 1 and 2 as masters of all resources:
+
+lockspace foo nodir=1
+.br
+master node=1
+.br
+master node=2
+
+Lock management will be partitioned among the available masters.  There
+can be any number of masters defined.  The designated master nodes will
+master all resources/locks (according to the resource name hash).  When no
+masters are members of the lockspace, then the nodes revert to the common
+fully-distributed configuration.  Recovery is faster, with little
+disruption, when a non-master node joins/leaves.
+
+There is no special mode in the dlm for this lock server configuration,
+it's just a natural consequence of combining the "nodir" option with node
+weights.  When a lockspace has master nodes defined, the master has a
+default weight of 1 and all non-master nodes have weight of 0.  An explicit
+non-zero
+.B weight
+can also be assigned to master nodes, e.g.
+
+lockspace foo nodir=1
+.br
+master node=1 weight=2
+.br
+master node=2 weight=1
+
+In which case node 1 will master 2/3 of the total resources and node 2
+will master the other 1/3.
+
+.SH SEE ALSO
+.BR dlm_controld (8),
+.BR dlm_tool (8)
+
