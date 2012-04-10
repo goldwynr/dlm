@@ -8,20 +8,145 @@
 
 #include "dlm_daemon.h"
 
-/*
- * TODO: lockspace master/nodir/weight
- */
+#if 0
 
-int get_weight(int nodeid, char *lockspace)
+lockspace ls_name [ls_args]
+master    ls_name node=nodeid [node_args]
+master    ls_name node=nodeid [node_args]
+master    ls_name node=nodeid [node_args]
+
+lockspace foo nodir=1
+master node=1 weight=2
+master node=2 weight=1
+
+#endif
+
+/* The max line length in dlm.conf */
+
+#define MAX_LINE 256
+
+int get_weight(struct lockspace *ls, int nodeid)
 {
-	/* default weight is 1 */
-	return 1;
+	int i;
+
+	/* if no masters are defined, everyone defaults to weight 1 */
+
+	if (!ls->master_count)
+		return 1;
+
+	for (i = 0; i < ls->master_count; i++) {
+		if (ls->master_nodeid[i] == nodeid)
+			return ls->master_weight[i];
+	}
+
+	/* if masters are defined, non-masters default to weight 0 */
+
+	return 0;
+}
+
+static void read_master_config(struct lockspace *ls, FILE *file)
+{
+	char line[MAX_LINE];
+	char name[MAX_LINE];
+	char args[MAX_LINE];
+	char *k;
+	int nodeid, weight, i;
+
+	while (fgets(line, MAX_LINE, file)) {
+		if (line[0] == '\n')
+			break;
+		if (line[0] == ' ')
+			break;
+		if (line[0] == '#')
+			continue;
+
+		if (strncmp(line, "master", strlen("master")))
+			break;
+
+		memset(name, 0, sizeof(name));
+		memset(args, 0, sizeof(args));
+		nodeid = 0;
+		weight = 1;
+
+		sscanf(line, "master %s %[^\n]s", name, args);
+
+		if (strcmp(name, ls->name))
+			break;
+
+		k = strstr(args, "node=");
+		if (!k)
+			break;
+
+		sscanf(k, "node=%d", &nodeid);
+		if (!nodeid)
+			break;
+
+		k = strstr(args, "weight=");
+		if (k)
+			sscanf(k, "weight=%d", &weight);
+
+		log_debug("config lockspace %s nodeid %d weight %d",
+			  ls->name, nodeid, weight);
+
+		i = ls->master_count++;
+		ls->master_nodeid[i] = nodeid;
+		ls->master_weight[i] = weight;
+
+		if (ls->master_count >= MAX_NODES)
+			break;
+	}
+}
+
+void setup_lockspace_config(struct lockspace *ls)
+{
+	FILE *file;
+	char line[MAX_LINE];
+	char name[MAX_LINE];
+	char args[MAX_LINE];
+	char *k;
+	int val;
+
+	if (!path_exists(CONF_FILE_PATH))
+		return;
+
+	file = fopen(CONF_FILE_PATH, "r");
+	if (!file)
+		return;
+
+	while (fgets(line, MAX_LINE, file)) {
+		if (line[0] == '#')
+			continue;
+		if (line[0] == '\n')
+			continue;
+
+		if (strncmp(line, "lockspace", strlen("lockspace")))
+			continue;
+
+		memset(name, 0, sizeof(name));
+		memset(args, 0, sizeof(args));
+		val = 0;
+
+		sscanf(line, "lockspace %s %[^\n]s", name, args);
+
+		if (strcmp(name, ls->name))
+			continue;
+
+		k = strstr(args, "nodir=");
+		if (k) {
+			sscanf(k, "nodir=%d", &val);
+			ls->nodir = val;
+		}
+
+		read_master_config(ls, file);
+	}
+
+	fclose(file);
 }
 
 static void get_val_int(char *line, int *val_out)
 {
-	char key[PATH_MAX];
-	char val[PATH_MAX];
+	char key[MAX_LINE];
+	char val[MAX_LINE];
 	int rv;
 
 	rv = sscanf(line, "%[^=]=%s", key, val);
@@ -33,8 +158,8 @@ static void get_val_int(char *line, int *val_out)
 
 static void get_val_str(char *line, char *val_out)
 {
-	char key[PATH_MAX];
-	char val[PATH_MAX];
+	char key[MAX_LINE];
+	char val[MAX_LINE];
 	int rv;
 
 	rv = sscanf(line, "%[^=]=%s", key, val);
@@ -48,8 +173,8 @@ void set_opt_file(int update)
 {
 	struct dlm_option *o;
 	FILE *file;
-	char line[PATH_MAX];
-	char str[PATH_MAX];
+	char line[MAX_LINE];
+	char str[MAX_LINE];
 	int i, val;
 
 	if (!path_exists(CONF_FILE_PATH))
@@ -59,7 +184,7 @@ void set_opt_file(int update)
 	if (!file)
 		return;
 
-	while (fgets(line, PATH_MAX, file)) {
+	while (fgets(line, MAX_LINE, file)) {
 		if (line[0] == '#')
 			continue;
 		if (line[0] == '\n')
@@ -67,7 +192,7 @@ void set_opt_file(int update)
 
 		memset(str, 0, sizeof(str));
 
-		for (i = 0; i < PATH_MAX; i++) {
+		for (i = 0; i < MAX_LINE; i++) {
 			if (line[i] == ' ')
 				break;
 			if (line[i] == '=')

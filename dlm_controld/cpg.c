@@ -552,9 +552,12 @@ static void start_kernel(struct lockspace *ls)
 	if (ls->joining)
 		set_sysfs_id(ls->name, ls->global_id);
 
+	if (ls->nodir)
+		set_sysfs_nodir(ls->name, 1);
+
 	format_member_ids(ls);
 	format_renew_ids(ls);
-	set_configfs_members(ls->name, member_count, member_ids,
+	set_configfs_members(ls, ls->name, member_count, member_ids,
 			     renew_count, renew_ids);
 	set_sysfs_control(ls->name, 1);
 	ls->kernel_stopped = 0;
@@ -1347,7 +1350,7 @@ static void confchg_cb(cpg_handle_t handle,
 		   cpg callback we receive */
 		log_group(ls, "confchg for our leave");
 		stop_kernel(ls, 0);
-		set_configfs_members(ls->name, 0, NULL, 0, NULL);
+		set_configfs_members(ls, ls->name, 0, NULL, 0, NULL);
 		set_sysfs_event_done(ls->name, 0);
 		cpg_finalize(ls->cpg_handle);
 		client_dead(ls->cpg_client);

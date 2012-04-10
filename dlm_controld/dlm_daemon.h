@@ -155,10 +155,6 @@ EXTERN struct dlm_option dlm_options[dlm_options_max];
 
 #define MAX_NODE_ADDRESSES 4
 
-/* Max string length printed on a line, for debugging/dump output. */
-
-#define MAXLINE		256
-
 #define PROTO_TCP  0
 #define PROTO_SCTP 1
 #define PROTO_DETECT 2
@@ -243,6 +239,13 @@ struct lockspace {
 	char			name[DLM_LOCKSPACE_LEN+1];
 	uint32_t		global_id;
 
+	/* dlm.conf config */
+
+	int			nodir;
+	int			master_count;
+	int			master_nodeid[MAX_NODES];
+	int			master_weight[MAX_NODES];
+
 	/* lockspace membership stuff */
 
 	cpg_handle_t		cpg_handle;
@@ -295,8 +298,10 @@ struct lockspace {
 int set_sysfs_control(char *name, int val);
 int set_sysfs_event_done(char *name, int val);
 int set_sysfs_id(char *name, uint32_t id);
-int set_configfs_members(char *name, int new_count, int *new_members,
-			int renew_count, int *renew_members);
+int set_sysfs_nodir(char *name, int val);
+int set_configfs_members(struct lockspace *ls, char *name,
+			 int new_count, int *new_members,
+			 int renew_count, int *renew_members);
 int add_configfs_node(int nodeid, char *addr, int addrlen, int local);
 void del_configfs_node(int nodeid);
 void clear_configfs(void);
@@ -308,7 +313,8 @@ int path_exists(const char *path);
 
 /* config.c */
 void set_opt_file(int update);
-int get_weight(int nodeid, char *lockspace);
+int get_weight(struct lockspace *ls, int nodeid);
+void setup_lockspace_config(struct lockspace *ls);
 
 /* cpg.c */
 void process_lockspace_changes(void);

@@ -160,6 +160,16 @@ int set_sysfs_id(char *name, uint32_t id)
 	return do_sysfs(name, "id", buf);
 }
 
+int set_sysfs_nodir(char *name, int val)
+{
+	char buf[32];
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, 32, "%d", val);
+
+	return do_sysfs(name, "nodir", buf);
+}
+
 static int update_dir_members(char *name)
 {
 	char path[PATH_MAX];
@@ -234,7 +244,8 @@ int path_exists(const char *path)
    call to set_members().  We rmdir/mkdir for these nodes so dlm-kernel
    can notice they've left and rejoined. */
 
-int set_configfs_members(char *name, int new_count, int *new_members,
+int set_configfs_members(struct lockspace *ls, char *name,
+			 int new_count, int *new_members,
 			 int renew_count, int *renew_members)
 {
 	char path[PATH_MAX];
@@ -364,7 +375,7 @@ int set_configfs_members(char *name, int new_count, int *new_members,
 		 * set node's weight
 		 */
 
-		w = get_weight(id, name);
+		w = get_weight(ls, id);
 
 		memset(path, 0, PATH_MAX);
 		snprintf(path, PATH_MAX, "%s/%s/nodes/%d/weight",

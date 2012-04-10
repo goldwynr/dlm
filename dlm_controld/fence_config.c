@@ -157,9 +157,7 @@ static int read_config_section(unsigned int nodeid, FILE *file, char *dev_line,
 		memset(con_name, 0, sizeof(con_name));
 		memset(con_args, 0, sizeof(con_args));
 
-		rv = sscanf(line, "%s %s %[^\n]s", unused, con_name, con_args);
-		if (rv < 3)
-			return -EINVAL;
+		sscanf(line, "%s %s %[^\n]s", unused, con_name, con_args);
 
 		/* invalid config */
 		if (strncmp(dev_name, con_name, FENCE_CONFIG_NAME_MAX))

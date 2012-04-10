@@ -188,6 +188,7 @@ static struct lockspace *create_ls(char *name)
 	INIT_LIST_HEAD(&ls->transactions);
 	INIT_LIST_HEAD(&ls->resources);
 #endif
+	setup_lockspace_config(ls);
  out:
 	return ls;
 }
@@ -312,10 +313,12 @@ const char *dlm_mode_str(int mode)
 
 /* recv "online" (join) and "offline" (leave) messages from dlm via uevents */
 
+#define MAX_LINE_UEVENT 256
+
 static void process_uevent(int ci)
 {
 	struct lockspace *ls;
-	char buf[MAXLINE];
+	char buf[MAX_LINE_UEVENT];
 	char *argv[MAXARGS], *act, *sys;
 	int rv, argc = 0;
 
