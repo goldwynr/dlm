@@ -45,7 +45,6 @@ Performs the same function as
 .B dlm_create_lockspace()
 above, but passes some creation flags to the call that affect the lockspace being created. Currently supported flags are:
 .nf
-DLM_LSFL_NODIR    the lockspace should not use a resource directory
 DLM_LSFL_TIMEWARN the dlm should emit warnings over netlink when locks
                   have been waiting too long; required for deadlock
                   detection

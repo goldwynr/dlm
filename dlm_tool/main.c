@@ -47,7 +47,6 @@ static char *lsname;
 static int operation;
 static int opt_ind;
 static int ls_all_nodes = 0;
-static int opt_dir = 0;
 static int opt_excl = 0;
 static int opt_fs = 0;
 static int dump_mstcpy = 0;
@@ -192,7 +191,6 @@ static void print_usage(void)
 	printf("\n");
 	printf("Options:\n");
 	printf("  -n               Show all node information in ls\n");
-	printf("  -d 0|1           Resource directory off/on in join, default 0\n");
 	printf("  -e 0|1           Exclusive create off/on in join, default 0\n");
 	printf("  -f 0|1           FS (filesystem) flag off/on in join, default 0\n");
 	printf("  -m <mode>        Permission mode for lockspace device (octal), default 0600\n");
@@ -204,7 +202,7 @@ static void print_usage(void)
 	printf("\n");
 }
 
-#define OPTION_STRING "MhVnd:m:e:f:vws"
+#define OPTION_STRING "MhVnm:e:f:vws"
 
 static void decode_arguments(int argc, char **argv)
 {
@@ -217,10 +215,6 @@ static void decode_arguments(int argc, char **argv)
 		optchar = getopt(argc, argv, OPTION_STRING);
 
 		switch (optchar) {
-		case 'd':
-			opt_dir = atoi(optarg);
-			break;
-
 		case 'e':
 			opt_excl = atoi(optarg);
 			break;
@@ -418,9 +412,6 @@ static char *flag_str(uint32_t flags)
 
 	strcat(join_flags, "flags ");
 
-	if (flags & DLM_LSFL_NODIR)
-		strcat(join_flags, "NODIR ");
-
 	if (flags & DLM_LSFL_NEWEXCL)
 		strcat(join_flags, "NEWEXCL ");
 
@@ -434,9 +425,6 @@ static void do_join(char *name)
 {
 	dlm_lshandle_t *dh;
 	uint32_t flags = 0;
-
-	if (!opt_dir)
-		flags |= DLM_LSFL_NODIR;
 
 	if (opt_excl)
 		flags |= DLM_LSFL_NEWEXCL;
