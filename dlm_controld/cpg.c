@@ -598,6 +598,7 @@ static int wait_conditions_done(struct lockspace *ls)
 	if (opt(enable_quorum_lockspace_ind) && !cluster_quorate) {
 		log_group(ls, "wait for quorum");
 		ls->wait_debug = DLMC_LS_WAIT_QUORUM;
+		poll_lockspaces++;
 		return 0;
 	}
 
