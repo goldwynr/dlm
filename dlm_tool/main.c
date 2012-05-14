@@ -474,7 +474,7 @@ static char *pr_master(int nodeid)
 	memset(buf, 0, sizeof(buf));
 
 	if (nodeid > 0)
-		sprintf(buf, "Local %d", nodeid);
+		sprintf(buf, "Master:%d", nodeid);
 	else if (!nodeid)
 		sprintf(buf, "Master");
 	else if (nodeid == -1)
@@ -779,18 +779,25 @@ static void print_rsb_toss(char *line)
 	else
 		goto fail;
 
-	printf("Dir %d master %d our %d ",
-		dir_nodeid, master_nodeid, our_nodeid);
+	if (master_nodeid != our_nodeid)
+		printf("Master:%d", master_nodeid);
+	else
+		printf("Master");
+
+	if (dir_nodeid != our_nodeid)
+		printf(" Dir:%d", dir_nodeid);
+	else
+		printf(" Dir");
 
 	if (master_nodeid == our_nodeid && res_nodeid != 0)
-		printf("res %d", res_nodeid);
+		printf(" res_nodeid %d", res_nodeid);
 
 	printf("\n");
 
 	return;
 
  fail:
-	fprintf(stderr, "print_rsb error rv %d line \"%s\"\n", rv, line);
+	fprintf(stderr, "print_rsb_toss error rv %d line \"%s\"\n", rv, line);
 }
 
 static void clear_rinfo(struct rinfo *ri)
