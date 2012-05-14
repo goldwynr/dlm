@@ -1403,14 +1403,18 @@ struct dlm_option *get_dlm_option(char *name)
 static void set_opt_cli(int argc, char **argv)
 {
 	struct dlm_option *o;
-	char *arg1 = argv[1];
-	char *p, *arg_str;
+	char *arg1, *p, *arg_str;
 	char bundled_letters[8];
 	int b, blc = 0, blc_max = 8;
 	int debug_options = 0;
 	int i, ind;
 
-	if (argc < 2 || !strcmp(arg1, "help") || !strcmp(arg1, "--help") || !strcmp(arg1, "-h")) {
+	if (argc < 2)
+		return;
+
+	arg1 = argv[1];
+
+	if (!strcmp(arg1, "help") || !strcmp(arg1, "--help") || !strcmp(arg1, "-h")) {
 		print_usage();
 		exit(EXIT_SUCCESS);
 	}
