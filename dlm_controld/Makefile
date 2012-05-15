@@ -29,7 +29,7 @@ BIN_SOURCE = action.c \
              rbtree.c
 LIB_SOURCE = lib.c
 
-BIN_CFLAGS += -D_GNU_SOURCE -g \
+BIN_CFLAGS += -D_GNU_SOURCE -O2 -g \
 	-Wall \
 	-Wformat \
 	-Wformat-security \

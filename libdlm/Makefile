@@ -55,7 +55,7 @@ UDEV_TARGET = 51-dlm.rules
 
 SOURCE = libdlm.c
 
-CFLAGS += -D_GNU_SOURCE -g \
+CFLAGS += -D_GNU_SOURCE -O2 -g \
 	-Wall \
 	-Wformat \
 	-Wformat-security \
@@ -75,7 +75,7 @@ CFLAGS += -D_GNU_SOURCE -g \
 	-fexceptions \
 	-fasynchronous-unwind-tables \
 	-fdiagnostics-show-option \
-	-fPIC \
+	-fPIC
 
 LIB_CFLAGS += $(CFLAGS) -D_REENTRANT
 LLT_CFLAGS += $(CFLAGS)
