@@ -55,7 +55,7 @@ UDEV_TARGET = 51-dlm.rules
 
 SOURCE = libdlm.c
 
-CFLAGS += -D_GNU_SOURCE -O2 -g \
+CFLAGS += -D_GNU_SOURCE -O2 -ggdb \
 	-Wall \
 	-Wformat \
 	-Wformat-security \

@@ -8,7 +8,7 @@ MAN_TARGET = dlm_tool.8
 
 BIN_SOURCE = main.c
 
-BIN_CFLAGS += -D_GNU_SOURCE -O2 -g \
+BIN_CFLAGS += -D_GNU_SOURCE -O2 -ggdb \
 	-Wall \
 	-Wformat \
 	-Wformat-security \

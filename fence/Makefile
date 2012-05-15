@@ -8,7 +8,7 @@ BIN_TARGET = dlm_stonith
 
 BIN_SOURCE = stonith_helper.c
 
-BIN_CFLAGS += -D_GNU_SOURCE -O2 -g \
+BIN_CFLAGS += -D_GNU_SOURCE -O2 -ggdb \
 	-Wall \
 	-Wformat \
 	-Wformat-security \
