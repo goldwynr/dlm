@@ -11,6 +11,7 @@
 #include <corosync/cfg.h>
 #include <corosync/cmap.h>
 #include <corosync/quorum.h>
+#include <errno.h>
 
 static corosync_cfg_handle_t	ch;
 static quorum_handle_t		qh;
@@ -295,9 +296,17 @@ int setup_cluster_cfg(void)
 	cs_error_t err;
 	unsigned int nodeid;
 	int fd;
+	int retry = 1;
 
+try_again:
 	err = corosync_cfg_initialize(&ch, &cfg_callbacks);
 	if (err != CS_OK) {
+		if ((err == CS_ERR_TRY_AGAIN) && (retry <= 10)) {
+			log_error("corosync has not completed initialization.. retry %d", retry);
+			sleep(1);
+			retry++;
+			goto try_again;
+		}
 		log_error("corosync cfg init error %d", err);
 		return -1;
 	}
