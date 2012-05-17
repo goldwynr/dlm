@@ -1424,7 +1424,7 @@ int main(int argc, char **argv)
 		break;
 
 	case OP_STATUS:
-		dlmc_print_status(0);
+		dlmc_print_status(verbose ? DLMC_STATUS_VERBOSE : 0);
 		break;
 
 	case OP_DUMP:

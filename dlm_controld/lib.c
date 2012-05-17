@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -157,6 +158,14 @@ int dlmc_dump_plocks(char *name, char *buf)
 	return do_dump(DLMC_CMD_DUMP_PLOCKS, name, buf);
 }
 
+static int nodeid_compare(const void *va, const void *vb)
+{
+	const int *a = va;
+	const int *b = vb;
+
+	return *a - *b;
+}
+
 static void print_str(char *str, int len)
 {
 	char *p;
@@ -175,17 +184,142 @@ static void print_str(char *str, int len)
 		printf("    %s\n", p);
 }
 
-static void print_daemon(struct dlmc_state *st, char *str, char *bin, uint32_t flags)
+static unsigned int kv(char *str, const char *k)
 {
-	printf("our_nodeid %d\n", st->nodeid);
-	print_str(str, st->str_len);
+	char valstr[64];
+	char *p;
+	int i;
+
+	p = strstr(str, k);
+	if (!p)
+		return 0;
+
+	p = strstr(p, "=") + 1;
+	if (!p)
+		return 0;
+
+	memset(valstr, 0, 64);
+
+	for (i = 0; i < 64; i++) {
+		if (*p == ' ')
+			break;
+		if (*p == '\0')
+			break;
+		if (*p == '\n')
+			break;
+		valstr[i] = *p;
+		p++;
+	}
+
+	return (unsigned int)strtoul(valstr, NULL, 0);
 }
 
-static void print_daemon_node(struct dlmc_state *st, char *str, char *bin, uint32_t flags)
+static char *ks(char *str, const char *k)
 {
-	printf("nodeid %d\n", st->nodeid);
-	print_str(str, st->str_len);
+	static char valstr[64];
+	char *p;
+	int i;
+
+	p = strstr(str, k);
+	if (!p)
+		return 0;
+
+	p = strstr(p, "=") + 1;
+	if (!p)
+		return 0;
+
+	memset(valstr, 0, 64);
+
+	for (i = 0; i < 64; i++) {
+		if (*p == ' ')
+			break;
+		if (*p == '\0')
+			break;
+		if (*p == '\n')
+			break;
+		valstr[i] = *p;
+		p++;
+	}
+
+	return valstr;
 }
+
+static void print_daemon(struct dlmc_state *st, char *str, char *bin, uint32_t flags)
+{
+	unsigned int cluster_ringid, daemon_ringid;
+	unsigned int fipu;
+
+	if (flags & DLMC_STATUS_VERBOSE) {
+		printf("our_nodeid %d\n", st->nodeid);
+		print_str(str, st->str_len);
+		return;
+	}
+
+	cluster_ringid = kv(str, "cluster_ringid");
+	daemon_ringid = kv(str, "daemon_ringid");
+
+	printf("cluster nodeid %d quorate %u ring seq %u %u\n",
+		st->nodeid,
+		kv(str, "quorate"),
+		cluster_ringid, daemon_ringid);
+
+	fipu = kv(str, "fence_in_progress_unknown");
+
+	printf("daemon now %u fence_pid %u %s\n",
+		kv(str, "monotime"),
+		kv(str, "fence_pid"),
+		fipu ? "fence_init" : "");
+}
+
+static void format_daemon_node(struct dlmc_state *st, char *str, char *bin, uint32_t flags,
+			       char *node_line, char *fence_line)
+{
+	unsigned int delay_fencing, result_wait, killed;
+
+	snprintf(node_line, DLMC_STATE_MAXSTR - 1,
+		"node %d %c add %u rem %u fail %u fence %u at %u %u\n",
+		st->nodeid,
+		kv(str, "member") ? 'M' : 'X',
+		kv(str, "add_time"),
+		kv(str, "rem_time"),
+		kv(str, "fail_monotime"),
+		kv(str, "fence_monotime"),
+		kv(str, "actor_done"),
+		kv(str, "fence_walltime"));
+
+	if (!kv(str, "need_fencing"))
+		return;
+
+	delay_fencing = kv(str, "delay_fencing");
+	result_wait = kv(str, "fence_result_wait");
+	killed = kv(str, "killed");
+
+	if (delay_fencing)
+		snprintf(fence_line, DLMC_STATE_MAXSTR - 1,
+			"fence %d %s delay actor %u fail %u fence %u now %u%s%s\n",
+			st->nodeid,
+			ks(str, "left_reason"),
+			kv(str, "actor_last"),
+			kv(str, "fail_walltime"),
+			kv(str, "fence_walltime"),
+			(unsigned int)time(NULL),
+			result_wait ? " result_wait" : "",
+			killed ? " killed" : "");
+	else
+		snprintf(fence_line, DLMC_STATE_MAXSTR - 1,
+			"fence %d %s pid %d actor %u fail %u fence %u now %u%s%s\n",
+			st->nodeid,
+			ks(str, "left_reason"),
+			kv(str, "fence_pid"),
+			kv(str, "actor_last"),
+			kv(str, "fail_walltime"),
+			kv(str, "fence_walltime"),
+			(unsigned int)time(NULL),
+			result_wait ? " result_wait" : "",
+			killed ? " killed" : "");
+}
+
+#define MAX_SORT 64
 
 int dlmc_print_status(uint32_t flags)
 {
@@ -195,7 +329,12 @@ int dlmc_print_status(uint32_t flags)
 	char maxstr[DLMC_STATE_MAXSTR];
 	char maxbin[DLMC_STATE_MAXBIN];
 	char *str, *bin;
+	int all_count, node_count, fence_count;
+	int all_ids[MAX_SORT], node_ids[MAX_SORT], fence_ids[MAX_SORT];
+	char *node_lines[MAX_SORT], *fence_lines[MAX_SORT];
+	char *node_line, *fence_line;
 	int fd, rv, off;
+	int i, j;
 
 	init_header(&h, DLMC_CMD_DUMP_STATUS, NULL, 0);
 
@@ -216,6 +355,15 @@ int dlmc_print_status(uint32_t flags)
 	str = maxstr;
 	bin = maxbin;
 	off = 0;
+
+	all_count = 0;
+	node_count = 0;
+	fence_count = 0;
+	memset(&all_ids, 0, sizeof(all_ids));
+	memset(&node_ids, 0, sizeof(node_ids));
+	memset(&fence_ids, 0, sizeof(fence_ids));
+	memset(node_lines, 0, sizeof(node_lines));
+	memset(fence_lines, 0, sizeof(fence_lines));
 
 	while (1) {
 		memset(&state, 0, sizeof(state));
@@ -244,15 +392,76 @@ int dlmc_print_status(uint32_t flags)
 		case DLMC_STATE_DAEMON:
 			print_daemon(st, str, bin, flags);
 			break;
+
 		case DLMC_STATE_DAEMON_NODE:
-			print_daemon_node(st, str, bin, flags);
+
+			if (flags & DLMC_STATUS_VERBOSE) {
+				printf("nodeid %d\n", st->nodeid);
+				print_str(str, st->str_len);
+			} else {
+				node_line = malloc(DLMC_STATE_MAXSTR);
+				if (!node_line)
+					break;
+				fence_line = malloc(DLMC_STATE_MAXSTR);
+				if (!fence_line) {
+					free(node_line);
+					break;
+				}
+				memset(node_line, 0, DLMC_STATE_MAXSTR);
+				memset(fence_line, 0, DLMC_STATE_MAXSTR);
+
+				format_daemon_node(st, str, bin, flags,
+						   node_line, fence_line);
+
+				all_ids[all_count++] = st->nodeid;
+
+				node_ids[node_count] = st->nodeid;
+				node_lines[node_count++] = node_line;
+				node_count++;
+
+				if (!fence_line[0]) {
+					free(fence_line);
+				} else {
+					fence_ids[fence_count] = st->nodeid;
+					fence_lines[fence_count] = fence_line;
+					fence_count++;
+				}
+			}
 			break;
+
 		default:
 			break;
 		}
 
 		if (rv < 0)
 			break;
+	}
+
+	if (all_count)
+		qsort(all_ids, all_count, sizeof(int), nodeid_compare);
+
+	if (all_count && fence_count) {
+		for (i = 0; i < all_count; i++) {
+			for (j = 0; j < fence_count; j++) {
+				if (all_ids[i] != fence_ids[j])
+					continue;
+				printf("%s", fence_lines[j]);
+				free(fence_lines[j]);
+				break;
+			}
+		}
+	}
+
+	if (all_count && node_count) {
+		for (i = 0; i < all_count; i++) {
+			for (j = 0; j < node_count; j++) {
+				if (all_ids[i] != node_ids[j])
+					continue;
+				printf("%s", node_lines[j]);
+				free(node_lines[j]);
+				break;
+			}
+		}
 	}
 
  out_close:

@@ -78,6 +78,8 @@ struct dlmc_lockspace {
 #define DLMC_NODES_MEMBERS	2
 #define DLMC_NODES_NEXT		3
 
+#define DLMC_STATUS_VERBOSE	0x00000001
+
 int dlmc_dump_debug(char *buf);
 int dlmc_dump_config(char *buf);
 int dlmc_dump_log_plock(char *buf);

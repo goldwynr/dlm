@@ -2053,7 +2053,7 @@ static int print_state_daemon_node(struct node_daemon *node, char *str)
 	snprintf(str, DLMC_STATE_MAXSTR-1,
 		 "member=%d "
 		 "killed=%d "
-		 "left_reason=%d "
+		 "left_reason=%s "
 		 "need_fencing=%d "
 		 "delay_fencing=%d "
 		 "fence_pid=%d "
@@ -2069,7 +2069,7 @@ static int print_state_daemon_node(struct node_daemon *node, char *str)
 		 "fence_monotime=%llu ",
 		 node->daemon_member,
 		 node->killed,
-		 node->left_reason,
+		 reason_str(node->left_reason),
 		 node->need_fencing,
 		 node->delay_fencing,
 		 node->fence_pid,
@@ -2121,7 +2121,8 @@ static int print_state_daemon(char *str)
 		 "quorate=%d "
 		 "fence_pid=%d "
 		 "fence_in_progress_unknown=%d "
-		 "zombie_count=%d ",
+		 "zombie_count=%d "
+		 "monotime=%llu ",
 		 daemon_member_count,
 		 daemon_joined_count,
 		 daemon_remove_count,
@@ -2130,7 +2131,8 @@ static int print_state_daemon(char *str)
 		 cluster_quorate,
 		 daemon_fence_pid,
 		 fence_in_progress_unknown,
-		 zombie_count);
+		 zombie_count,
+		 (unsigned long long)monotime());
 
 	return strlen(str) + 1;
 }
