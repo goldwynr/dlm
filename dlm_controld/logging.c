@@ -88,8 +88,8 @@ void copy_log_dump_plock(char *buf, int *len)
 	log_copy(buf, len, log_dump_plock, &log_point_plock, &log_wrap_plock);
 }
 
-static void log_save_str(int level, int len, char *log_buf,
-			 unsigned int *point, unsigned int *wrap)
+static void log_save_str(int len, char *log_buf, unsigned int *point,
+			 unsigned int *wrap)
 {
 	unsigned int p = *point;
 	unsigned int w = *wrap;
@@ -151,10 +151,10 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 	log_str[pos++] = '\n';
 	log_str[pos++] = '\0';
 
-	if (level)
-		log_save_str(level, pos - 1, log_dump, &log_point, &log_wrap);
+	if (level < LOG_NONE)
+		log_save_str(pos - 1, log_dump, &log_point, &log_wrap);
 	if (plock)
-		log_save_str(level, pos - 1, log_dump_plock, &log_point_plock, &log_wrap_plock);
+		log_save_str(pos - 1, log_dump_plock, &log_point_plock, &log_wrap_plock);
 
 	if (level <= syslog_priority)
 		syslog(level, "%s", log_str);
@@ -170,7 +170,7 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 	if (!dlm_options[daemon_debug_ind].use_int)
 		return;
 
-	if (level || (plock && opt(plock_debug_ind)))
+	if ((level < LOG_NONE) || (plock && opt(plock_debug_ind)))
 		fprintf(stderr, "%s", log_str);
 }
 

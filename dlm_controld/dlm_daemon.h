@@ -185,6 +185,7 @@ EXTERN struct fence_device fence_all_device;
 #define LOG_DUMP_SIZE DLMC_DUMP_SIZE
 
 #define LOG_PLOCK 0x00010000
+#define LOG_NONE  0x00001111
 
 void log_level(char *name_in, uint32_t level_in, const char *fmt, ...);
 
@@ -192,7 +193,7 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...);
 #define log_debug(fmt, args...) log_level(NULL, LOG_DEBUG, fmt, ##args)
 #define log_group(ls, fmt, args...) log_level((ls)->name, LOG_DEBUG, fmt, ##args)
 
-#define log_plock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK, fmt, ##args)
+#define log_plock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_NONE, fmt, ##args)
 #define log_dlock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_DEBUG, fmt, ##args)
 #define log_elock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_ERR, fmt, ##args)
 
