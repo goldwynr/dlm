@@ -875,7 +875,7 @@ static void do_waiters(char *name, struct summary *sum)
 	FILE *file;
 	char path[PATH_MAX];
 	char line[LOCK_LINE_MAX];
-	char rname[65];
+	char rname[DLM_RESNAME_MAXLEN+1];
 	int header = 0;
 	int i, j, spaces;
 	int rv, nodeid, wait_type;
@@ -905,6 +905,7 @@ static void do_waiters(char *name, struct summary *sum)
 		/* parse the resource name from the remainder of the line */
 		j = 0;
 		spaces = 0;
+		memset(rname, 0, sizeof(rname));
 
 		for (i = 0; i < LOCK_LINE_MAX; i++) {
 			if (line[i] == '\n')
@@ -1043,7 +1044,7 @@ static void do_lockdump(char *name)
 	FILE *file;
 	char path[PATH_MAX];
 	char line[LOCK_LINE_MAX];
-	char r_name[65];
+	char r_name[DLM_RESNAME_MAXLEN+1];
 	int r_nodeid;
 	int r_len;
 	int rv;
