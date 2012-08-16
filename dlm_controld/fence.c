@@ -194,7 +194,7 @@ int unfence_node(int nodeid)
 	}
 	if (rv < 0) {
 		/* there's a problem with the config */
-		log_error("fence config %d error %d", nodeid, rv);
+		log_error("unfence %d fence_config_init error %d", nodeid, rv);
 		return rv;
 	}
 

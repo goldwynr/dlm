@@ -455,20 +455,13 @@ static struct node_daemon *add_node_daemon(int nodeid)
 	fc = &node->fence_config;
 	fc->nodeid = nodeid;
 
-	/* explicit command line arg has first priority */
-
-	if (dlm_options[fence_all_ind].cli_set) {
-		fc->dev[0] = &fence_all_device;
-		goto out;
-	}
-
-	/* explicit config file setting has second priority */
+	/* explicit config file setting */
 
 	rv = fence_config_init(fc, (unsigned int)nodeid, (char *)CONF_FILE_PATH);
 	if (!rv)
 		goto out;
 
-	/* no command line, no config file, so use default */
+	/* no config file setting, so use default */
 
 	if (rv == -ENOENT) {
 		fc->dev[0] = &fence_all_device;

@@ -1335,16 +1335,6 @@ static void set_opt_defaults(void)
 			1, NULL,
 			"enable/disable quorum requirement for lockspace operations");
 
-	set_opt_default(fence_all_ind,
-			"fence_all", '\0', req_arg_str,
-			-1, "dlm_stonith",
-			"fence all nodes with this agent");
-
-	set_opt_default(unfence_all_ind,
-			"unfence_all", '\0', no_arg,
-			0, NULL,
-			"enable unfencing self with fence_all agent");
-
 	set_opt_default(help_ind,
 			"help", 'h', no_arg,
 			-1, NULL,
@@ -1565,8 +1555,8 @@ int main(int argc, char **argv)
 	set_opt_file(0);
 
 	strcpy(fence_all_device.name, "fence_all");
-	strcpy(fence_all_device.agent, opts(fence_all_ind));
-	fence_all_device.unfence = opt(unfence_all_ind);
+	strcpy(fence_all_device.agent, "dlm_stonith");
+	fence_all_device.unfence = 0;
 
 	INIT_LIST_HEAD(&lockspaces);
 	INIT_LIST_HEAD(&fs_register_list);

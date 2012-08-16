@@ -107,8 +107,6 @@ enum {
         enable_startup_fencing_ind,
         enable_quorum_fencing_ind,
         enable_quorum_lockspace_ind,
-        fence_all_ind,
-        unfence_all_ind,
         help_ind,
         version_ind,
         dlm_options_max,
