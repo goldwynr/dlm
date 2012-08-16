@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <errno.h>
 #include <pacemaker/crm/stonith-ng.h>
 
 int nodeid;
