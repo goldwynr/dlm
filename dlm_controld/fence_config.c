@@ -251,6 +251,7 @@ int fence_config_init(struct fence_config *fc, unsigned int nodeid, char *path)
 				rv = -ENOMEM;
 				goto out;
 			}
+			memset(dev, 0, sizeof(struct fence_device));
 
 			rv = sscanf(line, "%s %s %[^\n]s\n", dev->name, dev->agent, dev->args);
 			if (rv < 2) {
