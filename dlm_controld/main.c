@@ -1582,6 +1582,15 @@ int main(int argc, char **argv)
 	rv = sigaction(SIGTERM, &act, NULL);
 	if (rv < 0)
 		return -rv;
+	rv = sigaction(SIGINT, &act, NULL);
+	if (rv < 0)
+		return -rv;
+
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = SIG_IGN;
+	rv = sigaction(SIGHUP, &act, NULL);
+	if (rv < 0)
+		return -rv;
 
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = sigchld_handler;
