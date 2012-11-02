@@ -62,8 +62,8 @@
 
 /* TODO: get CONFDIR, LOGDIR, RUNDIR from build */
 
-#define RUNDIR                   "/var/run/dlm"
-#define LOGDIR                   "/var/log/dlm"
+#define RUNDIR                   "/var/run/dlm_controld"
+#define LOGDIR                   "/var/log/dlm_controld"
 #define CONFDIR                  "/etc/dlm"
 
 #define RUN_FILE_NAME            "dlm_controld.pid"
