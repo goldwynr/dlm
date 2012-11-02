@@ -40,7 +40,7 @@ BIN_LDFLAGS += -ldl
 all: $(BIN_TARGET)
 
 $(BIN_TARGET): $(BIN_SOURCE)
-	$(CC) $(BIN_CFLAGS) $(BIN_LDFLAGS) $(BIN_SOURCE) -o $@ -L.
+	$(CC) $(BIN_SOURCE) $(BIN_CFLAGS) $(BIN_LDFLAGS) -o $@ -L.
 
 clean:
 	rm -f *.o *.so *.so.* $(BIN_TARGET)

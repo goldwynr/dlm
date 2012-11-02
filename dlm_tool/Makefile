@@ -39,7 +39,7 @@ BIN_LDFLAGS += -lpthread -ldlm -ldlmcontrol
 all: $(BIN_TARGET)
 
 $(BIN_TARGET): $(BIN_SOURCE)
-	$(CC) $(BIN_CFLAGS) $(BIN_LDFLAGS) $(BIN_SOURCE) -o $@
+	$(CC) $(BIN_SOURCE) $(BIN_CFLAGS) $(BIN_LDFLAGS) -o $@
 
 clean:
 	rm -f *.o *.so *.so.* $(BIN_TARGET)

@@ -86,18 +86,18 @@ LLT_LDFLAGS += $(LDFLAGS)
 all: $(LIB_TARGET) $(LLT_TARGET) $(LIB_PC) $(LLT_PC)
 
 $(LIB_O): $(SOURCE) 
-	$(CC) $(LIB_CFLAGS) -c -o $@ $<
+	$(CC) $< $(LIB_CFLAGS) -c -o $@
 
 $(LLT_O): $(SOURCE) 
-	$(CC) $(LLT_CFLAGS) -c -o $@ $<
+	$(CC) $< $(LLT_CFLAGS) -c -o $@
 
 $(LIB_TARGET): $(LIB_O)
-	$(CC) $(LIB_LDFLAGS) -shared -o $@ -Wl,-soname=$(LIB_SMAJOR) $^
+	$(CC) $^ $(LIB_LDFLAGS) -shared -o $@ -Wl,-soname=$(LIB_SMAJOR)
 	ln -sf $(LIB_TARGET) $(LIB_SO)
 	ln -sf $(LIB_TARGET) $(LIB_SMAJOR)
 
 $(LLT_TARGET): $(LLT_O)
-	$(CC) $(LLT_LDFLAGS) -shared -o $@ -Wl,-soname=$(LLT_SMAJOR) $^
+	$(CC) $^ $(LLT_LDFLAGS) -shared -o $@ -Wl,-soname=$(LLT_SMAJOR)
 	ln -sf $(LLT_TARGET) $(LLT_SO)
 	ln -sf $(LLT_TARGET) $(LLT_SMAJOR)
 
