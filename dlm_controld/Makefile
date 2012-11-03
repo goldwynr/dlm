@@ -6,6 +6,8 @@ LIBDIR=$(PREFIX)/$(LIBNUM)
 HDRDIR=$(PREFIX)/include 
 MANDIR=$(PREFIX)/share/man
 
+USE_SD_NOTIFY=yes
+
 BIN_TARGET = dlm_controld
 
 LIB_NAME = libdlmcontrol
@@ -58,6 +60,12 @@ BIN_LDFLAGS += -lpthread -lrt -lcpg -lcmap -lcfg -lquorum
 
 LIB_CFLAGS += $(BIN_CFLAGS)
 LIB_LDFLAGS += -Wl,-z,relro -pie
+
+ifeq ($(USE_SD_NOTIFY),yes)
+	BIN_CFLAGS += $(shell pkg-config --cflags libsystemd-daemon) \
+		      -DUSE_SD_NOTIFY
+	BIN_LDFLAGS += $(shell pkg-config --libs libsystemd-daemon)
+endif
 
 all: $(LIB_TARGET) $(BIN_TARGET)
 

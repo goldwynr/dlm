@@ -3,10 +3,11 @@ Description=dlm control daemon
 After=syslog.target network.target corosync.service sys-kernel-config.mount
 
 [Service]
-Type=forking
+Type=notify
+NotifyAccess=main
 EnvironmentFile=/etc/sysconfig/dlm
 ExecStartPre=/sbin/modprobe dlm 
-ExecStart=/usr/sbin/dlm_controld $DLM_CONTROLD_OPTS
+ExecStart=/usr/sbin/dlm_controld --foreground $DLM_CONTROLD_OPTS
 #ExecStopPost=/sbin/modprobe -r dlm
 
 [Install]

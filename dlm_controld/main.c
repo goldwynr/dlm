@@ -14,6 +14,10 @@
 #include <linux/genetlink.h>
 #include <linux/dlm_netlink.h>
 
+#ifdef USE_SD_NOTIFY
+#include <systemd/sd-daemon.h>
+#endif
+
 #include "copyright.cf"
 #include "version.cf"
 
@@ -1011,6 +1015,10 @@ static void loop(void)
 		goto out;
 	plock_fd = rv;
 	plock_ci = client_add(rv, process_plocks, NULL);
+
+#ifdef USE_SD_NOTIFY
+	sd_notify(0, "READY=1");
+#endif
 
 	for (;;) {
 		rv = poll(pollfd, client_maxi + 1, poll_timeout);
