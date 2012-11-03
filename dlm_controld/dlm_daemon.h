@@ -109,6 +109,7 @@ enum {
         enable_quorum_lockspace_ind,
         help_ind,
         version_ind,
+        foreground_ind,
         dlm_options_max,
 };
 

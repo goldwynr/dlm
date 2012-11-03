@@ -1245,6 +1245,11 @@ static void set_opt_defaults(void)
 			0, NULL,
 			"enable debugging to stderr and don't fork");
 
+	set_opt_default(foreground_ind,
+			"foreground", '\0', no_arg,
+			0, NULL,
+			"don't fork");
+
 	set_opt_default(log_debug_ind,
 			"log_debug", 'K', no_arg,
 			0, NULL,
@@ -1562,7 +1567,7 @@ int main(int argc, char **argv)
 	INIT_LIST_HEAD(&fs_register_list);
 	init_daemon();
 
-	if (!opt(daemon_debug_ind)) {
+	if (!opt(daemon_debug_ind) && !opt(foreground_ind)) {
 		if (daemon(0, 0) < 0) {
 			perror("daemon error");
 			exit(EXIT_FAILURE);
