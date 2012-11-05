@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
 	if (t >= fail_time)
 		return 0;
 
-	rv = stonith_api_kick_helper(nodeid, 300, 1);
+	rv = stonith_api_kick_helper(nodeid, 300, 0);
 	if (rv) {
 		fprintf(stderr, "kick_helper error %d nodeid %d\n", rv, nodeid);
 		openlog("stonith_helper", LOG_CONS | LOG_PID, LOG_DAEMON);
