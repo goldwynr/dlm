@@ -1533,6 +1533,8 @@ static void set_opt_cli(int argc, char **argv)
 	}
 }
 
+#if 0
+/* When this is used, the systemd service file needs ControlGroup=cpu:/ */
 static void set_scheduler(void)
 {
 	struct sched_param sched_param;
@@ -1550,6 +1552,7 @@ static void set_scheduler(void)
 			  errno);
 	}
 }
+#endif
 
 int main(int argc, char **argv)
 {
@@ -1612,7 +1615,7 @@ int main(int argc, char **argv)
 	if (rv < 0)
 		return -rv;
 
-	set_scheduler();
+	/* set_scheduler(); */
 
 	loop();
 

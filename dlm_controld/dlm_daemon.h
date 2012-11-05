@@ -89,6 +89,7 @@ enum {
 
 enum {
         daemon_debug_ind = 0,
+        foreground_ind,
         log_debug_ind,
         timewarn_ind,
         protocol_ind,
@@ -109,7 +110,6 @@ enum {
         enable_quorum_lockspace_ind,
         help_ind,
         version_ind,
-        foreground_ind,
         dlm_options_max,
 };
 

@@ -3,6 +3,7 @@ Description=dlm control daemon
 After=syslog.target network.target corosync.service sys-kernel-config.mount
 
 [Service]
+OOMScoreAdjust=-1000
 Type=notify
 NotifyAccess=main
 EnvironmentFile=/etc/sysconfig/dlm
