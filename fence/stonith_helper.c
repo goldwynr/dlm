@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 	rv = stonith_api_kick_helper(nodeid, 300, 0);
 	if (rv) {
 		fprintf(stderr, "kick_helper error %d nodeid %d\n", rv, nodeid);
-		openlog("stonith_helper", LOG_CONS | LOG_PID, LOG_DAEMON);
+		openlog("dlm_stonith", LOG_CONS | LOG_PID, LOG_DAEMON);
 		syslog(LOG_ERR, "kick_helper error %d nodeid %d\n", rv, nodeid);
 		return rv;
 	}
