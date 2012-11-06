@@ -1107,7 +1107,7 @@ static int lockfile(const char *dir, const char *name)
 	int fd, rv;
 
 	old_umask = umask(0022);
-	rv = mkdir(dir, 0777);
+	rv = mkdir(dir, 0775);
 	if (rv < 0 && errno != EEXIST) {
 		umask(old_umask);
 		return rv;
@@ -1116,7 +1116,7 @@ static int lockfile(const char *dir, const char *name)
 
 	snprintf(path, PATH_MAX, "%s/%s", dir, name);
 
-	fd = open(path, O_CREAT|O_WRONLY|O_CLOEXEC, 0666);
+	fd = open(path, O_CREAT|O_WRONLY|O_CLOEXEC, 0644);
 	if (fd < 0) {
 		log_error("lockfile open error %s: %s",
 			  path, strerror(errno));
