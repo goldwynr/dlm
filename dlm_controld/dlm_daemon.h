@@ -161,7 +161,7 @@ EXTERN struct dlm_option dlm_options[dlm_options_max];
 EXTERN int daemon_quit;
 EXTERN int cluster_down;
 EXTERN int poll_lockspaces;
-EXTERN int poll_fencing;
+EXTERN unsigned int retry_fencing;
 EXTERN int poll_fs;
 EXTERN int poll_ignore_plock;
 EXTERN int poll_drop_plock;
@@ -190,6 +190,7 @@ void log_level(char *name_in, uint32_t level_in, const char *fmt, ...);
 
 #define log_error(fmt, args...) log_level(NULL, LOG_ERR, fmt, ##args)
 #define log_debug(fmt, args...) log_level(NULL, LOG_DEBUG, fmt, ##args)
+#define log_erros(ls, fmt, args...) log_level((ls)->name, LOG_ERR, fmt, ##args)
 #define log_group(ls, fmt, args...) log_level((ls)->name, LOG_DEBUG, fmt, ##args)
 
 #define log_plock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_NONE, fmt, ##args)
@@ -258,6 +259,7 @@ struct lockspace {
 	int			kernel_stopped;
 	int			fs_registered;
 	int			wait_debug; /* for status/debugging */
+	uint32_t		wait_retry; /* for debug rate limiting */
 	uint32_t		change_seq;
 	uint32_t		started_count;
 	struct change		*started_change;

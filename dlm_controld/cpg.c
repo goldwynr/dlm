@@ -16,6 +16,16 @@
 	}                                     \
 })
 
+/* retries are once a second */
+#define log_retry(ls, fmt, args...) ({ \
+	if (ls->wait_retry < 60) \
+		log_group(ls, fmt, ##args); \
+	else if (ls->wait_retry == 60) \
+		log_erros(ls, fmt, ##args); \
+        else if (!(ls->wait_retry % 3600)) \
+                log_erros(ls, fmt, ##args); \
+})
+
 /* per lockspace cpg: ls->node_history */
 
 struct node {
@@ -591,30 +601,54 @@ static void stop_kernel(struct lockspace *ls, uint32_t seq)
 static int wait_conditions_done(struct lockspace *ls)
 {
 	if (!check_ringid_done(ls)) {
-		ls->wait_debug = DLMC_LS_WAIT_RINGID;
+		if (ls->wait_debug != DLMC_LS_WAIT_RINGID) {
+			ls->wait_debug = DLMC_LS_WAIT_RINGID;
+			ls->wait_retry = 0;
+		}
+		ls->wait_retry++;
+		/* the check function logs a message */
+
 		return 0;
 	}
 
 	if (opt(enable_quorum_lockspace_ind) && !cluster_quorate) {
-		log_group(ls, "wait for quorum");
-		ls->wait_debug = DLMC_LS_WAIT_QUORUM;
+		if (ls->wait_debug != DLMC_LS_WAIT_QUORUM) {
+			ls->wait_debug = DLMC_LS_WAIT_QUORUM;
+			ls->wait_retry = 0;
+		}
+		ls->wait_retry++;
+		log_retry(ls, "wait for quorum");
+
 		poll_lockspaces++;
 		return 0;
 	}
 
 	if (!check_fencing_done(ls)) {
-		ls->wait_debug = DLMC_LS_WAIT_FENCING;
+		if (ls->wait_debug != DLMC_LS_WAIT_FENCING) {
+			ls->wait_debug = DLMC_LS_WAIT_FENCING;
+			ls->wait_retry = 0;
+		}
+		ls->wait_retry++;
+		log_retry(ls, "wait for fencing");
+
 		poll_lockspaces++;
 		return 0;
 	}
 
 	if (!check_fs_done(ls)) {
-		ls->wait_debug = DLMC_LS_WAIT_FSDONE;
+		if (ls->wait_debug != DLMC_LS_WAIT_FSDONE) {
+			ls->wait_debug = DLMC_LS_WAIT_FSDONE;
+			ls->wait_retry = 0;
+		}
+		ls->wait_retry++;
+		log_retry(ls, "wait for fsdone");
+
 		poll_fs++;
 		return 0;
 	}
 
 	ls->wait_debug = 0;
+	ls->wait_retry = 0;
 
 	return 1;
 }

@@ -11,6 +11,16 @@
 /* protocol_version flags */
 #define PV_STATEFUL 0x0001
 
+/* retries are once a second */
+#define log_retry(cur_count, fmt, args...) ({ \
+	if (cur_count < 60) \
+		log_debug(fmt, ##args); \
+	else if (cur_count == 60) \
+		log_error(fmt, ##args); \
+	else if (!(cur_count % 3600)) \
+		log_error(fmt, ##args); \
+})
+
 struct protocol_version {
 	uint16_t major;
 	uint16_t minor;
@@ -105,6 +115,9 @@ static int fence_in_progress_unknown = 1;
 #define MAX_ZOMBIES 16
 static int zombie_pids[MAX_ZOMBIES];
 static int zombie_count;
+
+static int fence_result_pid;
+static unsigned int fence_result_try;
 
 static void send_fence_result(int nodeid, int result, uint32_t flags, uint64_t walltime);
 static void send_fence_clear(int nodeid, int result, uint32_t flags, uint64_t walltime);
@@ -718,32 +731,33 @@ static void fence_pid_cancel(int nodeid, int pid)
  * later same as case B above
  */
 
-static void daemon_fence_work(void)
+static int daemon_fence_work(void)
 {
 	struct node_daemon *node, *safe;
 	int rv, nodeid, pid, need, low, actor, result;
+	int retry = 0;
 	uint32_t flags;
 
 	if (daemon_ringid_wait) {
 		/* We've seen a nodedown confchg callback, but not the
 		   corresponding ringid callback. */
-		log_debug("fence work wait for cpg ringid");
-		return;
+		log_retry(retry_fencing, "fence work wait for cpg ringid");
+		return retry;
 	}
 
 	if (cluster_ringid_seq != daemon_ringid.seq) {
 		/* wait for ringids to be in sync */
-		log_debug("fence work wait for cluster ringid");
-		return;
+		log_retry(retry_fencing, "fence work wait for cluster ringid");
+		return retry;
 	}
 
-	/* poll_fencing++; */
+	/* retry = 1; */
 
 	if (opt(enable_quorum_fencing_ind) && !cluster_quorate) {
 		/* wait for quorum before doing any fencing, but if there
 		   is none, send_fence_clear below can unblock new nodes */
-		log_debug("fence work wait for quorum");
-		poll_fencing++;
+		log_retry(retry_fencing, "fence work wait for quorum");
+		retry = 1;
 		goto out_fipu;
 	}
 
@@ -766,7 +780,7 @@ static void daemon_fence_work(void)
 			log_debug("fence startup %d delay %d from %llu",
 				  node->nodeid, opt(post_join_delay_ind),
 				  (unsigned long long)daemon_last_join_monotime);
-			poll_fencing++;
+			retry = 1;
 			continue;
 		}
 
@@ -837,10 +851,10 @@ static void daemon_fence_work(void)
 
 		if (!opt(enable_concurrent_fencing_ind) && daemon_fence_pid) {
 			/* run one agent at a time in case they need the same switch */
-			log_debug("fence request %d delay for other pid %d",
+			log_retry(retry_fencing, "fence request %d delay for other pid %d",
 				  node->nodeid, daemon_fence_pid);
 			node->delay_fencing = 1;
-			poll_fencing++;
+			retry = 1;
 			continue;
 		}
 
@@ -849,7 +863,7 @@ static void daemon_fence_work(void)
 				  node->nodeid, opt(post_join_delay_ind),
 				  (unsigned long long)cluster_last_join_monotime);
 			node->delay_fencing = 1;
-			poll_fencing++;
+			retry = 1;
 			continue;
 		}
 		node->delay_fencing = 0;
@@ -947,12 +961,19 @@ static void daemon_fence_work(void)
 			continue;
 		}
 
-		poll_fencing++;
+		retry = 1;
 
 		rv = fence_result(nodeid, pid, &result);
 		if (rv == -EAGAIN) {
 			/* agent pid is still running */
-			log_debug("fence wait %d pid %d running", nodeid, pid);
+
+			if (fence_result_pid != pid) {
+				fence_result_try = 0;
+				fence_result_pid = pid;
+			}
+			fence_result_try++;
+
+			log_retry(fence_result_try, "fence wait %d pid %d running", nodeid, pid);
 			continue;
 		}
 
@@ -1083,12 +1104,20 @@ static void daemon_fence_work(void)
 
 	if (zombie_count)
 		clear_zombies();
+
+	return retry;
 }
 
 void process_fencing_changes(void)
 {
-	poll_fencing = 0;
-	daemon_fence_work();
+	int retry;
+
+	retry = daemon_fence_work();
+
+	if (retry)
+		retry_fencing++;
+	else
+		retry_fencing = 0;
 }
 
 static void receive_fence_clear(struct dlm_header *hd, int len)

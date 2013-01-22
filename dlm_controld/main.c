@@ -1059,7 +1059,7 @@ static void loop(void)
 
 		poll_timeout = -1;
 
-		if (poll_fencing) {
+		if (retry_fencing) {
 			process_fencing_changes();
 			poll_timeout = 1000;
 		}
