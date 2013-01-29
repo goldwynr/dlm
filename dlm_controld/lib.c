@@ -275,11 +275,20 @@ static void format_daemon_node(struct dlmc_state *st, char *str, char *bin, uint
 			       char *node_line, char *fence_line)
 {
 	unsigned int delay_fencing, result_wait, killed;
+	char letter;
+
+	if (st->type == DLMC_STATE_STARTUP_NODE)
+		letter = 'U';
+	else if (kv(str, "member"))
+		letter = 'M';
+	else
+		letter = 'X';
+	
 
 	snprintf(node_line, DLMC_STATE_MAXSTR - 1,
 		"node %d %c add %u rem %u fail %u fence %u at %u %u\n",
 		st->nodeid,
-		kv(str, "member") ? 'M' : 'X',
+		letter,
 		kv(str, "add_time"),
 		kv(str, "rem_time"),
 		kv(str, "fail_monotime"),
@@ -394,6 +403,7 @@ int dlmc_print_status(uint32_t flags)
 			break;
 
 		case DLMC_STATE_DAEMON_NODE:
+		case DLMC_STATE_STARTUP_NODE:
 
 			if (flags & DLMC_STATUS_VERBOSE) {
 				printf("nodeid %d\n", st->nodeid);

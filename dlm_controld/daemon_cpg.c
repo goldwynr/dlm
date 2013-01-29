@@ -2133,6 +2133,29 @@ void send_state_daemon_nodes(int fd)
 	}
 }
 
+void send_state_startup_nodes(int fd)
+{
+	struct node_daemon *node;
+	struct dlmc_state st;
+	char str[DLMC_STATE_MAXSTR];
+	int str_len;
+
+	list_for_each_entry(node, &startup_nodes, list) {
+		memset(&st, 0, sizeof(st));
+		st.type = DLMC_STATE_STARTUP_NODE;
+		st.nodeid = node->nodeid;
+
+		memset(str, 0, sizeof(str));
+		str_len = print_state_daemon_node(node, str);
+
+		st.str_len = str_len;
+
+		send(fd, &st, sizeof(st), MSG_NOSIGNAL);
+		if (str_len)
+			send(fd, str, str_len, MSG_NOSIGNAL);
+	}
+}
+
 static int print_state_daemon(char *str)
 {
 	snprintf(str, DLMC_STATE_MAXSTR-1,

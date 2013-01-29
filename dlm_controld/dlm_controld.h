@@ -50,6 +50,7 @@ struct dlmc_header {
 
 #define DLMC_STATE_DAEMON       1
 #define DLMC_STATE_DAEMON_NODE  2
+#define DLMC_STATE_STARTUP_NODE 3
 
 struct dlmc_state {
 	uint32_t type; /* DLMC_STATE_ */
