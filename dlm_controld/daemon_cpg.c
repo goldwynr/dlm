@@ -731,7 +731,7 @@ static void fence_pid_cancel(int nodeid, int pid)
  * later same as case B above
  */
 
-static int daemon_fence_work(void)
+static void daemon_fence_work(void)
 {
 	struct node_daemon *node, *safe;
 	int rv, nodeid, pid, need, low, actor, result;
@@ -742,13 +742,13 @@ static int daemon_fence_work(void)
 		/* We've seen a nodedown confchg callback, but not the
 		   corresponding ringid callback. */
 		log_retry(retry_fencing, "fence work wait for cpg ringid");
-		return retry;
+		goto out;
 	}
 
 	if (cluster_ringid_seq != daemon_ringid.seq) {
 		/* wait for ringids to be in sync */
 		log_retry(retry_fencing, "fence work wait for cluster ringid");
-		return retry;
+		goto out;
 	}
 
 	/* retry = 1; */
@@ -1105,19 +1105,20 @@ static int daemon_fence_work(void)
 	if (zombie_count)
 		clear_zombies();
 
-	return retry;
-}
-
-void process_fencing_changes(void)
-{
-	int retry;
-
-	retry = daemon_fence_work();
-
+	/*
+	 * setting retry_fencing will cause the main daemon poll loop
+	 * to timeout in 1 second and call this function again.
+	 */
+ out:
 	if (retry)
 		retry_fencing++;
 	else
 		retry_fencing = 0;
+}
+
+void process_fencing_changes(void)
+{
+	daemon_fence_work();
 }
 
 static void receive_fence_clear(struct dlm_header *hd, int len)
