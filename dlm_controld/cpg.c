@@ -41,6 +41,8 @@ struct node {
 	int lockspace_member;
 	int lockspace_fail_reason;
 
+	uint32_t last_match_seq;
+
 	uint64_t start_time;
 
 	int check_fs;
@@ -819,6 +821,12 @@ static int match_change(struct lockspace *ls, struct change *cg,
 		return 0;
 	}
 
+	if (node->last_match_seq > cg->seq) {
+		log_group(ls, "match_change %d:%u skip cg %u last matched cg %u",
+			  hd->nodeid, seq, cg->seq, node->last_match_seq);
+		return 0;
+	}
+
 	/* verify this is the right change by matching the counts
 	   and the nodeids of the current members */
 
@@ -849,6 +857,8 @@ static int match_change(struct lockspace *ls, struct change *cg,
 
 	if (members_mismatch)
 		return 0;
+
+	node->last_match_seq = cg->seq;
 
 	log_group(ls, "match_change %d:%u matches cg %u", hd->nodeid, seq,
 		  cg->seq);
