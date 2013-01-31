@@ -742,16 +742,16 @@ static void daemon_fence_work(void)
 		/* We've seen a nodedown confchg callback, but not the
 		   corresponding ringid callback. */
 		log_retry(retry_fencing, "fence work wait for cpg ringid");
+		retry = 1;
 		goto out;
 	}
 
 	if (cluster_ringid_seq != daemon_ringid.seq) {
 		/* wait for ringids to be in sync */
 		log_retry(retry_fencing, "fence work wait for cluster ringid");
+		retry = 1;
 		goto out;
 	}
-
-	/* retry = 1; */
 
 	if (opt(enable_quorum_fencing_ind) && !cluster_quorate) {
 		/* wait for quorum before doing any fencing, but if there
