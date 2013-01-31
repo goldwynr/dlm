@@ -865,6 +865,22 @@ static int match_change(struct lockspace *ls, struct change *cg,
 	if (members_mismatch)
 		return 0;
 
+	/* Not completely sure if this is a valid assertion or not, i.e. not
+	   sure if we really never want to nack our first and only cg.  I have
+	   seen one case in which a node incorrectly accepted nacks for cg seq
+	   1 and ls change_seq 1.  (It was the secondary effect of another bug.)
+
+	   Or, it's possible that this should apply a little more broadly as:
+	   don't nack our most recent cg, i.e. cg->seq == ls->change_seq (1 or
+	   otherwise).  I'm hoping to find a test case that will exercise this
+	   to clarify the situation here, and then update this comment. */
+
+	if (cg->seq == 1 && ls->change_seq == 1 && (hd->flags & DLM_MFLG_NACK)) {
+		log_group(ls, "match_change %d:%u skip cg %u for nack",
+			  hd->nodeid, seq, cg->seq);
+		return 0;
+	}
+
 	node->last_match_seq = cg->seq;
 
 	log_group(ls, "match_change %d:%u matches cg %u", hd->nodeid, seq,
