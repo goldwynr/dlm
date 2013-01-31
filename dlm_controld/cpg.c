@@ -608,6 +608,7 @@ static int wait_conditions_done(struct lockspace *ls)
 		ls->wait_retry++;
 		/* the check function logs a message */
 
+		poll_lockspaces++;
 		return 0;
 	}
 
