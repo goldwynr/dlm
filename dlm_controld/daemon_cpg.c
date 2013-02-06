@@ -1251,6 +1251,7 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 	if (count) {
 		log_debug("receive_fence_result %d from %d clear startup",
 			  fr->nodeid, hd->nodeid);
+		return;
 	}
 
 	node = get_node_daemon(fr->nodeid);
@@ -1272,6 +1273,22 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 		log_error("receive_fence_result %d from %d result %d no fence_result_wait",
 			  fr->nodeid, hd->nodeid, fr->result);
 		/* should we ignore and return here? */
+	}
+
+	if (!fr->result && node->daemon_member) {
+
+		/*
+		 * the only time I think this can happen is if there is a
+		 * manual dlm_tool fence_ack for a node that is a member,
+		 * e.g. partition, merge, fence_ack while it's a merged member.
+		 * Ideally it would be killed after merging with state, but
+		 * not necessarily, i.e. it's start message can't be sent or
+		 * received.
+		 */
+
+		log_error("receive_fence_result %d from %d result %d node not dead",
+			  fr->nodeid, hd->nodeid, fr->result);
+		return;
 	}
 
 	if ((hd->nodeid == our_nodeid) && (fr->result != -ECANCELED))
