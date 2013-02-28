@@ -348,6 +348,8 @@ int setup_node_config(void)
 	cmap_handle_t h;
 	cs_error_t err;
 	uint32_t nodeid;
+	uint8_t two_node = 0;
+	int node_count = 0;
 	int i;
 
 	err = cmap_initialize(&h);
@@ -365,10 +367,23 @@ int setup_node_config(void)
 
 		log_debug("node_config %d", nodeid);
 
+		node_count++;
+
 		if (opt(enable_fencing_ind) && opt(enable_startup_fencing_ind))
 			add_startup_node(nodeid);
 	}
 
+	memset(key, 0, sizeof(key));
+	snprintf(key, CMAP_KEYNAME_MAXLEN, "quorum.two_node");
+
+	err = cmap_get_uint8(h, key, &two_node);
+	if (err != CS_OK)
+		goto out;
+
+	if (node_count == 2 && two_node)
+		cluster_two_node = 1;
+
+ out:
 	cmap_finalize(h);
 	return 0;
 }

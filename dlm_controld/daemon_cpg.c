@@ -369,6 +369,18 @@ static int nodes_need_fencing(void)
 	return 0;
 }
 
+static int nodeid_needs_fencing(int nodeid)
+{
+	struct node_daemon *node;
+
+	node = get_node_daemon(nodeid);
+	if (!node) {
+		log_error("nodeid_needs_fencing %d not found", nodeid);
+		return 0;
+	}
+	return node->need_fencing;
+}
+
 static int all_daemon_members_fipu(void)
 {
 	struct node_daemon *node;
@@ -839,7 +851,7 @@ static void daemon_fence_work(void)
 			/*
 			 * node has rejoined in clean state
 			 */
-			log_debug("fence request %d skip member", node->nodeid);
+			log_debug("fence request %d skip for is_clean_daemon_member", node->nodeid);
 
 			node->need_fencing = 0;
 			node->delay_fencing = 0;
@@ -857,6 +869,10 @@ static void daemon_fence_work(void)
 			retry = 1;
 			continue;
 		}
+
+		/* use post_join_delay to avoid fencing a node in the short
+		   time between it joining the cluster (giving cluster quorum)
+		   and joining the daemon cpg, which allows it to bypass fencing */
 
 		if (monotime() - cluster_last_join_monotime < opt(post_join_delay_ind)) {
 			log_debug("fence request %d delay %d from %llu",
@@ -945,7 +961,7 @@ static void daemon_fence_work(void)
 			 * will see and do this, so we don't need to send
 			 * a fence result.
 			 */
-			log_debug("fence wait %d pid %d skip member", nodeid, pid);
+			log_debug("fence wait %d pid %d skip for is_clean_daemon_member", nodeid, pid);
 
 			node->need_fencing = 0;
 			node->delay_fencing = 0;
@@ -1262,7 +1278,8 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 	}
 
 	if (!node->need_fencing) {
-		/* should never happen */
+		/* should never happen ... will happen if a manual fence_ack is
+		   done for a node that doesn't need it */
 		log_error("receive_fence_result %d from %d result %d no need_fencing",
 		  	  fr->nodeid, hd->nodeid, fr->result);
 		return;
@@ -1275,20 +1292,23 @@ static void receive_fence_result(struct dlm_header *hd, int len)
 		/* should we ignore and return here? */
 	}
 
-	if (!fr->result && node->daemon_member) {
+	if (node->daemon_member &&
+	    (!fr->result || (fr->result == -ECANCELED))) {
 
 		/*
-		 * the only time I think this can happen is if there is a
-		 * manual dlm_tool fence_ack for a node that is a member,
-		 * e.g. partition, merge, fence_ack while it's a merged member.
-		 * Ideally it would be killed after merging with state, but
-		 * not necessarily, i.e. it's start message can't be sent or
-		 * received.
+		 * The node was successfully fenced, but is still a member.
+		 * This will happen when there is a partition, storage fencing
+		 * is started, a merge causes the node to become a member
+		 * again, and storage fencing completes successfully.  If we
+		 * received a proto message from the node after the merge, then
+		 * we will have detected a stateful merge, and we may have
+		 * already killed it.
 		 */
 
-		log_error("receive_fence_result %d from %d result %d node not dead",
+		log_error("receive_fence_result %d from %d result %d node is daemon_member",
 			  fr->nodeid, hd->nodeid, fr->result);
-		return;
+
+		kick_node_from_cluster(fr->nodeid);
 	}
 
 	if ((hd->nodeid == our_nodeid) && (fr->result != -ECANCELED))
@@ -1580,18 +1600,62 @@ static void receive_protocol(struct dlm_header *hd, int len)
 	    (p->dr_ver.flags & PV_STATEFUL) &&
 	    (our_protocol.dr_ver.flags & PV_STATEFUL)) {
 
-		log_debug("daemon node %d stateful merge", hd->nodeid);
-		log_debug("daemon node %d join %llu left %llu local quorum %llu",
+		log_error("daemon node %d stateful merge", hd->nodeid);
+		log_debug("daemon node %d join %llu left %llu local quorum %llu killed %d",
 			  hd->nodeid,
 			  (unsigned long long)node->daemon_add_time,
 			  (unsigned long long)node->daemon_rem_time,
-			  (unsigned long long)cluster_quorate_monotime);
+			  (unsigned long long)cluster_quorate_monotime,
+			  node->killed);
 
 		if (cluster_quorate && node->daemon_rem_time &&
 		    cluster_quorate_monotime < node->daemon_rem_time) {
-			log_debug("daemon node %d kill due to stateful merge", hd->nodeid);
-			if (!node->killed)
-				kick_node_from_cluster(hd->nodeid);
+			if (!node->killed) {
+				if (cluster_two_node) {
+					/*
+					 * When there are two nodes and two_node mode
+					 * is used, both will have quorum throughout
+					 * the partition and subsequent stateful merge.
+					 *
+					 * - both will race to fence each other in
+					 *   response to the partition
+					 *
+					 * - both can attempt to kill the cluster
+					 *   on the other in response to the stateful
+					 *   merge here
+					 *
+					 * - we don't want both nodes to kill the cluster
+					 *   on the other, which can happen if the merge
+					 *   occurs before power fencing is successful,
+					 *   or can happen before/during/after storage
+					 *   fencing
+					 *
+					 * - if nodeA successfully fences nodeB (due
+					 *   to the partition), we want nodeA to kill
+					 *   the cluster on nodeB in response to the
+					 *   merge (we don't want nodeB to kill nodeA
+					 *   in response to the merge).
+					 *
+					 * So, a node that has successfully fenced the
+					 * other will kill the cluster on it. If fencing
+					 * is still running, we wait until it's
+					 * successfull to kill the cluster on the node
+					 * being fenced.
+					 */
+					if (nodeid_needs_fencing(hd->nodeid)) {
+						/* when fencing completes successfully,
+						   we'll see the node is a daemon member
+						   and kill it */
+						log_debug("daemon node %d delay kill for stateful merge", hd->nodeid);
+					} else {
+						log_error("daemon node %d kill due to stateful merge", hd->nodeid);
+						kick_node_from_cluster(hd->nodeid);
+					}
+				} else {
+					log_error("daemon node %d kill due to stateful merge", hd->nodeid);
+					kick_node_from_cluster(hd->nodeid);
+				}
+			}
 			node->killed = 1;
 		}
 
@@ -1808,6 +1872,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 	struct node_daemon *node;
 	uint64_t now, now_wall;
 	int nodedown = 0, procdown = 0, leave = 0;
+	int check_joined_count = 0, check_remove_count = 0, check_member_count = 0;
 	int we_joined = 0;
 	int i, reason, low;
 
@@ -1851,7 +1916,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 	}
 
 	if (nodedown || procdown || leave)
-		log_debug("%s left nodedown %d procdown %d leave %d",
+		log_debug("%s left reason nodedown %d procdown %d leave %d",
 			  group_name->value, nodedown, procdown, leave);
 
 	if (nodedown)
@@ -1864,6 +1929,8 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 		if (in_daemon_list(node->nodeid, daemon_member, daemon_member_count)) {
 			if (node->daemon_member)
 				continue;
+
+			check_joined_count++;
 
 			/* node joined daemon cpg */
 			node->daemon_member = 1;
@@ -1878,31 +1945,56 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 
 			if (node->need_fencing) {
 				/* need_fencing will be cleared if we accept a
-				   valid proto from it */
-				log_error("daemon new nodeid %d needs fencing",
-					  node->nodeid);
+				   valid proto from it (is_clean_daemon_member) */
+				log_error("daemon joined %d needs fencing", node->nodeid);
+			} else {
+				log_debug("daemon joined %d");
 			}
-
 		} else {
 			if (!node->daemon_member)
 				continue;
 
+			check_remove_count++;
+
 			/* node left daemon cpg */
 			node->daemon_member = 0;
-			node->killed = 0;
-			memset(&node->proto, 0, sizeof(struct protocol));
 			node->daemon_rem_time = now;
+			node->killed = 0;
 
-			/* tell loop below to look at this node */
-			node->recover_setup = 1;
+			/* If we never accepted a valid proto from this node,
+			   then it never fully joined and there's no need to
+			   recover it.  Similary, node_history_lockspace_fail
+			   only sets need_fencing in the lockspace if
+			   node->start_time was non-zero. */
+
+			if (node->proto.daemon_max[0]) {
+				/* tell loop below to look at this node */
+				node->recover_setup = 1;
+			} else {
+				log_debug("daemon remove %d no proto skip recover", node->nodeid);
+			}
+
+			memset(&node->proto, 0, sizeof(struct protocol));
 		}
 	}
 
-	/* set up recovery work for nodes that just failed */
+	list_for_each_entry(node, &daemon_nodes, list) {
+		if (node->daemon_member)
+			check_member_count++;
+	}
 
-	/* TODO: limit to nodes with a valid proto?
-	 * node_history_lockspace_fail() would only set
-	 * need_fencing if node->start_time was non-zero. */
+	/* when we join, all previous members look like they are joining */
+	if (!we_joined &&
+	    (daemon_joined_count != check_joined_count ||
+	     daemon_remove_count != check_remove_count ||
+	     daemon_member_count != check_member_count)) {
+		log_error("daemon counts joined %d check %d remove %d check %d member %d check %d",
+			  daemon_joined_count, check_joined_count,
+			  daemon_remove_count, check_remove_count,
+			  daemon_member_count, check_member_count);
+	}
+
+	/* set up recovery work for nodes that just failed (recover_setup set above) */
 
 	list_for_each_entry(node, &daemon_nodes, list) {
 		if (!node->recover_setup)
@@ -1916,8 +2008,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			continue;
 
 		if (node->need_fencing) {
-			log_error("daemon remove nodeid %d already needs fencing",
-				  node->nodeid);
+			log_error("daemon remove %d already needs fencing", node->nodeid);
 			continue;
 		}
 
@@ -1931,7 +2022,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 		if (reason == CPG_REASON_NODEDOWN || reason == CPG_REASON_PROCDOWN) {
 			if (node->fence_pid_wait || node->fence_pid) {
 				/* sanity check, should never happen */
-				log_error("daemon remove nodeid %d pid_wait %d pid %d",
+				log_error("daemon remove %d pid_wait %d pid %d",
 					  node->nodeid, node->fence_pid_wait, node->fence_pid);
 			}
 
