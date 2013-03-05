@@ -138,7 +138,7 @@ int fence_result(int nodeid, int pid, int *result)
 	if (rv < 0) {
 		/* shouldn't happen */
 		log_error("fence result %d pid %d waitpid %d errno %d",
-			  pid, nodeid, rv, errno);
+			  nodeid, pid, rv, errno);
 		return rv;
 	}
 

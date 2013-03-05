@@ -72,6 +72,7 @@ struct node_daemon {
 	int need_fence_clear;
 	int need_fencing;
 	int delay_fencing;
+	int stateful_merge;
 	int fence_pid;
 	int fence_pid_wait;
 	int fence_result_wait;
@@ -657,6 +658,20 @@ static void fence_pid_cancel(int nodeid, int pid)
 		  nodeid, pid, rv, result);
 }
 
+static void kick_stateful_merge_members(void)
+{
+	struct node_daemon *node;
+
+	list_for_each_entry(node, &daemon_nodes, list) {
+		if (!node->killed && node->stateful_merge) {
+			log_error("daemon node %d kill stateful merge member",
+				  node->nodeid);
+			kick_node_from_cluster(node->nodeid);
+			node->killed = 1;
+		}
+	}
+}
+
 /*
  * fence_in_progress_unknown (fipu)
  *
@@ -746,7 +761,8 @@ static void fence_pid_cancel(int nodeid, int pid)
 static void daemon_fence_work(void)
 {
 	struct node_daemon *node, *safe;
-	int rv, nodeid, pid, need, low, actor, result;
+	int gone_count = 0, part_count = 0, merge_count = 0, clean_count = 0;
+	int rv, nodeid, pid, need, low = 0, actor, result;
 	int retry = 0;
 	uint32_t flags;
 
@@ -771,6 +787,67 @@ static void daemon_fence_work(void)
 		log_retry(retry_fencing, "fence work wait for quorum");
 		retry = 1;
 		goto out_fipu;
+	}
+
+	/*
+	 * Count different types of nodes
+	 * gone: node not a member
+	 * part: member we've not received a proto message from
+	 * merge: member we received a stateful proto message from
+	 * clean: member we received a clean/new proto message from
+	 *
+	 * A node always views itself as a clean member, not a merge member.
+	 */
+
+	list_for_each_entry(node, &daemon_nodes, list) {
+		if (!node->daemon_member) {
+			gone_count++;
+		} else {
+			if (!low || node->nodeid < low)
+				low = node->nodeid;
+
+			if (node->stateful_merge)
+				merge_count++;
+			else if (!node->proto.daemon_max[0])
+				part_count++;
+			else
+				clean_count++;
+		}
+	}
+
+	/*
+	 * Wait for stateful merged members to be removed before moving
+	 * on to fencing.  Kill stateful merged members to clear them.
+	 * This section is only relevant to non-two-node, even splits.
+	 *
+	 * With two node splits, they race to fence each other and
+	 * whichever fences successfully then kills corosync on the other
+	 * (in the case where corosync is still running on the fenced node).
+	 *
+	 * With an odd split, the partition that maintained quorum will
+	 * kill stateful merged nodes when their proto message is received.
+	 *
+	 * With an even split, e.g. 2/2, we don't want both sets to
+	 * be fencing each other right after merge, when both sides
+	 * have quorum again and see the other side as statefully merged.
+	 * So, delay fencing until the stateful nodes are cleared on one
+	 * side (by way of the low nodeid killing stateful merged members).
+	 *
+	 * When there are 3 or more partitions that merge, none may see
+	 * enough clean nodes, so the cluster would be stuck here waiting
+	 * for someone to manually reset/restart enough nodes to produce
+	 * sufficient clean nodes (>= merged).
+	 */
+
+	if (!cluster_two_node && merge_count) {
+		log_retry(retry_fencing, "fence work wait to clear merge %d clean %d part %d gone %d",
+			  merge_count, clean_count, part_count, gone_count);
+
+		if ((clean_count >= merge_count) && !part_count && (low == our_nodeid))
+			kick_stateful_merge_members();
+
+		retry = 1;
+		goto out;
 	}
 
 	/*
@@ -1608,6 +1685,8 @@ static void receive_protocol(struct dlm_header *hd, int len)
 			  (unsigned long long)cluster_quorate_monotime,
 			  node->killed);
 
+		node->stateful_merge = 1;
+
 		if (cluster_quorate && node->daemon_rem_time &&
 		    cluster_quorate_monotime < node->daemon_rem_time) {
 			if (!node->killed) {
@@ -1960,6 +2039,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->daemon_member = 0;
 			node->daemon_rem_time = now;
 			node->killed = 0;
+			node->stateful_merge = 0;
 
 			/* If we never accepted a valid proto from this node,
 			   then it never fully joined and there's no need to
