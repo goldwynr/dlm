@@ -349,15 +349,15 @@ Example of nodeid 1 as master of all resources:
 
 lockspace foo nodir=1
 .br
-master node=1
+master    foo node=1
 
 Example of nodeid's 1 and 2 as masters of all resources:
 
 lockspace foo nodir=1
 .br
-master node=1
+master    foo node=1
 .br
-master node=2
+master    foo node=2
 
 Lock management will be partitioned among the available masters.  There
 can be any number of masters defined.  The designated master nodes will
@@ -376,9 +376,9 @@ can also be assigned to master nodes, e.g.
 
 lockspace foo nodir=1
 .br
-master node=1 weight=2
+master    foo node=1 weight=2
 .br
-master node=2 weight=1
+master    foo node=2 weight=1
 
 In which case node 1 will master 2/3 of the total resources and node 2
 will master the other 1/3.
