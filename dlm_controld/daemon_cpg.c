@@ -865,6 +865,11 @@ static void daemon_fence_work(void)
 		if (!opt(enable_startup_fencing_ind))
 			continue;
 
+		if (!daemon_last_join_monotime) {
+			log_debug("fence startup %d wait for confchg", node->nodeid);
+			continue;
+		}
+
 		if (monotime() - daemon_last_join_monotime < opt(post_join_delay_ind)) {
 			log_debug("fence startup %d delay %d from %llu",
 				  node->nodeid, opt(post_join_delay_ind),
