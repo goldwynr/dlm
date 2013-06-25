@@ -1021,6 +1021,10 @@ static void loop(void)
 	sd_notify(0, "READY=1");
 #endif
 
+	/* We want to wait for our protocol to be set before
+	   we start to process fencing. */
+	daemon_fence_allow = 1;
+
 	for (;;) {
 		rv = poll(pollfd, client_maxi + 1, poll_timeout);
 		if (rv == -1 && errno == EINTR) {

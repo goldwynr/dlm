@@ -162,6 +162,7 @@ EXTERN int daemon_quit;
 EXTERN int cluster_down;
 EXTERN int poll_lockspaces;
 EXTERN unsigned int retry_fencing;
+EXTERN int daemon_fence_allow;
 EXTERN int poll_fs;
 EXTERN int poll_ignore_plock;
 EXTERN int poll_drop_plock;

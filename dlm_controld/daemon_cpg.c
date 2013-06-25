@@ -766,6 +766,9 @@ static void daemon_fence_work(void)
 	int retry = 0;
 	uint32_t flags;
 
+	if (!daemon_fence_allow)
+		return;
+
 	if (daemon_ringid_wait) {
 		/* We've seen a nodedown confchg callback, but not the
 		   corresponding ringid callback. */
@@ -1811,6 +1814,7 @@ int set_protocol(void)
 {
 	struct protocol proto;
 	struct pollfd pollfd;
+	cs_error_t error;
 	int sent_proposal = 0;
 	int rv;
 
@@ -1860,8 +1864,17 @@ int set_protocol(void)
 			return -1;
 		}
 
-		if (pollfd.revents & POLLIN)
-			process_cpg_daemon(0);
+		if (pollfd.revents & POLLIN) {
+			/*
+			 * don't use process_cpg_daemon() because we only want to
+			 * dispatch one thing at a time because we only want to
+			 * handling protocol related things here.
+			 */
+
+			error = cpg_dispatch(cpg_handle_daemon, CS_DISPATCH_ONE);
+			if (error != CS_OK)
+				log_error("daemon cpg_dispatch one error %d", error);
+		}
 		if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
 			log_error("set_protocol poll revents %u",
 				  pollfd.revents);
@@ -1926,6 +1939,15 @@ static void deliver_cb_daemon(cpg_handle_t handle,
 
 	hd = (struct dlm_header *)data;
 	dlm_header_in(hd);
+
+	if (!daemon_fence_allow && hd->type != DLM_MSG_PROTOCOL) {
+		/* don't think this will happen; if it does we may
+		   need to verify that it's correct to ignore these
+		   messages instead of saving them to process after
+		   allow is set */
+		log_debug("deliver_cb_daemon ignore non proto msg %d", hd->type);
+		return;
+	}
 
 	switch (hd->type) {
 	case DLM_MSG_PROTOCOL:
