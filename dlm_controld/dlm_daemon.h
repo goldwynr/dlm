@@ -171,7 +171,7 @@ EXTERN int plock_ci;
 EXTERN struct list_head lockspaces;
 EXTERN int cluster_quorate;
 EXTERN int cluster_two_node;
-EXTERN uint64_t cluster_last_join_monotime;
+EXTERN uint64_t fence_delay_begin;
 EXTERN uint64_t cluster_quorate_monotime;
 EXTERN uint64_t cluster_joined_monotime;
 EXTERN uint64_t cluster_joined_walltime;

@@ -107,7 +107,6 @@ static int daemon_remove_count;
 static int daemon_ringid_wait;
 static struct cpg_ring_id daemon_ringid;
 static int daemon_fence_pid;
-static uint64_t daemon_last_join_monotime;
 static uint32_t last_join_seq;
 static uint32_t send_fipu_seq;
 static int wait_clear_fipu;
@@ -868,15 +867,15 @@ static void daemon_fence_work(void)
 		if (!opt(enable_startup_fencing_ind))
 			continue;
 
-		if (!daemon_last_join_monotime) {
-			log_debug("fence startup %d wait for confchg", node->nodeid);
+		if (!fence_delay_begin) {
+			log_debug("fence startup %d wait for initial delay", node->nodeid);
 			continue;
 		}
 
-		if (monotime() - daemon_last_join_monotime < opt(post_join_delay_ind)) {
+		if (monotime() - fence_delay_begin < opt(post_join_delay_ind)) {
 			log_debug("fence startup %d delay %d from %llu",
 				  node->nodeid, opt(post_join_delay_ind),
-				  (unsigned long long)daemon_last_join_monotime);
+				  (unsigned long long)fence_delay_begin);
 			retry = 1;
 			continue;
 		}
@@ -959,10 +958,10 @@ static void daemon_fence_work(void)
 		   time between it joining the cluster (giving cluster quorum)
 		   and joining the daemon cpg, which allows it to bypass fencing */
 
-		if (monotime() - cluster_last_join_monotime < opt(post_join_delay_ind)) {
+		if (monotime() - fence_delay_begin < opt(post_join_delay_ind)) {
 			log_debug("fence request %d delay %d from %llu",
 				  node->nodeid, opt(post_join_delay_ind),
-				  (unsigned long long)cluster_last_join_monotime);
+				  (unsigned long long)fence_delay_begin);
 			node->delay_fencing = 1;
 			retry = 1;
 			continue;
@@ -2042,7 +2041,7 @@ static void confchg_cb_daemon(cpg_handle_t handle,
 			node->daemon_member = 1;
 			node->daemon_add_time = now;
 
-			daemon_last_join_monotime = now;
+			fence_delay_begin = now;
 			last_join_seq++;
 
 			/* a joining node shows prev members in joined list */

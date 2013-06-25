@@ -151,7 +151,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 				  quorum_nodes[i], cluster_ringid_seq);
 			add_cluster_node(quorum_nodes[i], now);
 
-			cluster_last_join_monotime = now;
+			fence_delay_begin = now;
 
 			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
 							  MAX_NODE_ADDRESSES,
