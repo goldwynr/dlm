@@ -1,10 +1,10 @@
 DESTDIR=
 PREFIX=/usr
 BINDIR=$(PREFIX)/sbin
-#MANDIR=$(PREFIX)/share/man
+MANDIR=$(PREFIX)/share/man
 
 BIN_TARGET = dlm_stonith
-#MAN_TARGET = dlm_stonith.8
+MAN_TARGET = dlm_stonith.8
 
 BIN_SOURCE = stonith_helper.c
 
@@ -53,5 +53,5 @@ install: all
 	$(INSTALL) -d $(DESTDIR)/$(BINDIR)
 	$(INSTALL) -d $(DESTDIR)/$(MANDIR)/man8
 	$(INSTALL) -c -m 755 $(BIN_TARGET) $(DESTDIR)/$(BINDIR)
-#	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man8/
+	$(INSTALL) -m 644 $(MAN_TARGET) $(DESTDIR)/$(MANDIR)/man8/
 
