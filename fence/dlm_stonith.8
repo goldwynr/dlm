@@ -1,0 +1,37 @@
+.TH DLM_STONITH 8 2013-08-01 dlm dlm
+
+.SH NAME
+dlm_stonith \- a proxy for fencing via stonith/pacemaker
+
+.SH SYNOPSIS
+.B dlm_stonith
+
+.SH DESCRIPTION 
+
+dlm_controld can use dlm_stonith as a proxy fence agent when
+the stonith/pacemaker system performs actual fencing.
+
+dlm_stonith is run by dlm_controld, and is not meant to be
+run manually.  dlm_controld provides the options on stdin
+as key=val; command line options are for testing.
+
+If fencing was successful, this program has a zero exit code.
+If fencing failed, this program has a non-zero exit code.
+
+.SH OPTIONS
+
+.BI \-n " nodeid"
+
+The nodeid of the target node.  (stdin key is "node")
+
+.BI \-t " fail_time"
+
+The wall time at which the target node failed.  The wall time at which the
+node is fenced must be later than this for fencing to succeed.  (stdin key
+is "fail_time")  For "wall time" see
+.BR time (2).
+
+.SH SEE ALSO
+.BR dlm_controld (8),
+.BR dlm.conf (5)
+
