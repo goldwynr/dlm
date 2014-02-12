@@ -337,12 +337,19 @@ int dlmc_print_status(uint32_t flags)
 	struct dlmc_state *st;
 	char maxstr[DLMC_STATE_MAXSTR];
 	char maxbin[DLMC_STATE_MAXBIN];
-	char *str, *bin;
-	int all_count, node_count, fence_count;
-	int all_ids[MAX_SORT], node_ids[MAX_SORT], fence_ids[MAX_SORT];
-	char *node_lines[MAX_SORT], *fence_lines[MAX_SORT];
-	char *node_line, *fence_line;
-	int fd, rv, off;
+	char *str;
+	char *bin;
+	int all_count, node_count, fence_count, startup_count;
+	int all_ids[MAX_SORT];
+	int node_ids[MAX_SORT];
+	int fence_ids[MAX_SORT];
+	int startup_ids[MAX_SORT];
+	char *node_lines[MAX_SORT];
+	char *fence_lines[MAX_SORT];
+	char *node_line;
+	char *fence_line;
+	int found_node;
+	int fd, rv;
 	int i, j;
 
 	init_header(&h, DLMC_CMD_DUMP_STATUS, NULL, 0);
@@ -363,14 +370,15 @@ int dlmc_print_status(uint32_t flags)
 	st = &state;
 	str = maxstr;
 	bin = maxbin;
-	off = 0;
 
 	all_count = 0;
 	node_count = 0;
 	fence_count = 0;
+	startup_count = 0;
 	memset(&all_ids, 0, sizeof(all_ids));
 	memset(&node_ids, 0, sizeof(node_ids));
 	memset(&fence_ids, 0, sizeof(fence_ids));
+	memset(&startup_ids, 0, sizeof(startup_ids));
 	memset(node_lines, 0, sizeof(node_lines));
 	memset(fence_lines, 0, sizeof(fence_lines));
 
@@ -402,9 +410,11 @@ int dlmc_print_status(uint32_t flags)
 			print_daemon(st, str, bin, flags);
 			break;
 
-		case DLMC_STATE_DAEMON_NODE:
 		case DLMC_STATE_STARTUP_NODE:
+			startup_ids[startup_count++] = st->nodeid;
+			break;
 
+		case DLMC_STATE_DAEMON_NODE:
 			if (flags & DLMC_STATUS_VERBOSE) {
 				printf("nodeid %d\n", st->nodeid);
 				print_str(str, st->str_len);
@@ -426,7 +436,7 @@ int dlmc_print_status(uint32_t flags)
 				all_ids[all_count++] = st->nodeid;
 
 				node_ids[node_count] = st->nodeid;
-				node_lines[node_count++] = node_line;
+				node_lines[node_count] = node_line;
 				node_count++;
 
 				if (!fence_line[0]) {
@@ -450,13 +460,39 @@ int dlmc_print_status(uint32_t flags)
 	if (all_count)
 		qsort(all_ids, all_count, sizeof(int), nodeid_compare);
 
+	/* don't free any node_lines in this startup loop because we are just
+	   borrowing them; they are needed in the real node loop below. */
+
+	if (startup_count) {
+		for (i = 0; i < startup_count; i++) {
+			found_node = 0;
+			for (j = 0; j < node_count; j++) {
+				if (startup_ids[i] != node_ids[j])
+					continue;
+				found_node = 1;
+				if (!node_lines[j])
+					printf("startup node %d\n", st->nodeid);
+				else
+					printf("startup %s", node_lines[j]);
+				break;
+			}
+			if (!found_node)
+				printf("startup node %d\n", st->nodeid);
+		}
+	}
+
 	if (all_count && fence_count) {
 		for (i = 0; i < all_count; i++) {
 			for (j = 0; j < fence_count; j++) {
 				if (all_ids[i] != fence_ids[j])
 					continue;
-				printf("%s", fence_lines[j]);
-				free(fence_lines[j]);
+				if (!fence_lines[j]) {
+					printf("fence %d no data\n", fence_ids[j]);
+				} else {
+					printf("%s", fence_lines[j]);
+					free(fence_lines[j]);
+					fence_lines[j] = NULL;
+				}
 				break;
 			}
 		}
@@ -467,8 +503,13 @@ int dlmc_print_status(uint32_t flags)
 			for (j = 0; j < node_count; j++) {
 				if (all_ids[i] != node_ids[j])
 					continue;
-				printf("%s", node_lines[j]);
-				free(node_lines[j]);
+				if (!node_lines[j]) {
+					printf("node %d no data\n", node_ids[j]);
+				} else {
+					printf("%s", node_lines[j]);
+					free(node_lines[j]);
+					node_lines[j] = NULL;
+				}
 				break;
 			}
 		}
