@@ -56,11 +56,6 @@ static int get_options(int argc, char *argv[])
 		return -1;
 	}
 
-	if (!fail_time) {
-		fprintf(stderr, "no fail_time\n");
-		return -1;
-	}
-
 	return 0;
 }
 
@@ -73,9 +68,11 @@ int main(int argc, char *argv[])
 	if (rv)
 		return rv;
 
-	t = stonith_api_time_helper(nodeid, 0);
-	if (t >= fail_time)
-		return 0;
+	if (fail_time) {
+		t = stonith_api_time_helper(nodeid, 0);
+		if (t >= fail_time)
+			return 0;
+	}
 
 	rv = stonith_api_kick_helper(nodeid, 300, 0);
 	if (rv) {
@@ -85,13 +82,6 @@ int main(int argc, char *argv[])
 		return rv;
 	}
 
-	while (1) {
-		t = stonith_api_time_helper(nodeid, 0);
-		if (t >= fail_time)
-			return 0;
-		sleep(1);
-	}
-
-	return -1;
+	return 0;
 }
 

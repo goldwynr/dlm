@@ -26,10 +26,9 @@ The nodeid of the target node.  (stdin key is "node")
 
 .BI \-t " fail_time"
 
-The wall time at which the target node failed.  The wall time at which the
-node is fenced must be later than this for fencing to succeed.  (stdin key
-is "fail_time")  For "wall time" see
-.BR time (2).
+The time(2) at which the target node failed.
+If this option is provided, and the last fencing time is
+later, then a new fencing request is not made.
 
 .SH SEE ALSO
 .BR dlm_controld (8),
