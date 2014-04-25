@@ -122,17 +122,23 @@ static void log_save_str(int len, char *log_buf, unsigned int *point,
 void log_level(char *name_in, uint32_t level_in, const char *fmt, ...)
 {
 	va_list ap;
-	char name[NAME_ID_SIZE + 1];
+	char name[NAME_ID_SIZE + 2];
 	uint32_t level = level_in & 0x0000FFFF;
 	uint32_t extra = level_in & 0xFFFF0000;
 	int ret, pos = 0;
 	int len = LOG_STR_LEN - 2;
+	int namelen = 0;
 	int plock = extra & LOG_PLOCK;
 
 	memset(name, 0, sizeof(name));
 
-	if (name_in)
-		snprintf(name, NAME_ID_SIZE, "%s ", name_in);
+	if (name_in) {
+		namelen = snprintf(name, NAME_ID_SIZE + 1, "%s", name_in);
+		if (namelen > NAME_ID_SIZE)
+			namelen = NAME_ID_SIZE;
+		name[namelen] = ' ';
+		name[namelen+1] = '\0';
+	}
 
 	ret = snprintf(log_str + pos, len - pos, "%llu %s",
 		       (unsigned long long)monotime(), name);
