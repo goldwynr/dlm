@@ -132,6 +132,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 
 	quorum_node_count = 0;
 	memset(&quorum_nodes, 0, sizeof(quorum_nodes));
+	memset(&addrs, 0, sizeof(addrs));
 
 	for (i = 0; i < node_list_entries; i++)
 		quorum_nodes[quorum_node_count++] = node_list[i];
