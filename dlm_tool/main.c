@@ -659,10 +659,10 @@ static char *pr_verbose(struct lkb *lkb)
 
 	memset(buf, 0, sizeof(buf));
 
-	sprintf(buf, "time %016llu flags %08x %08x bast %d %llu",
+	sprintf(buf, "time %016llu flags %08x %08x bast %d %llu pid %d",
 		(unsigned long long)lkb->timestamp,
 		lkb->exflags, lkb->flags, lkb->highbast,
-		(unsigned long long)lkb->time_bast);
+		(unsigned long long)lkb->time_bast, lkb->ownpid);
 
 	return buf;
 }
